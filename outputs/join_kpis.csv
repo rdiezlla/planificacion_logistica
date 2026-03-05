@@ -1,0 +1,2 @@
+total_movimientos,movimientos_con_pedido_externo,movimientos_sin_pedido_externo,movimientos_asignados,coverage_join_overall,coverage_join_con_codigo,codigos_movimiento_con_match,service_ids_total,service_ids_con_movimientos,coverage_service_ids_with_mov
+278445,159846,118599,0,0.0,0.0,6,22885,0,0.0
