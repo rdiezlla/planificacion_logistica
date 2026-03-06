@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .service_classification import classify_service_type
-from .service_id import build_service_id, normalize_code
+from .service_id import build_service_id, extract_code_from_text, normalize_code
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,34 +19,6 @@ LOGGER = logging.getLogger(__name__)
 class CleanConfig:
     cutoff_date: pd.Timestamp
 
-
-ALB_CANONICAL = {
-    "ITEM": "item",
-    "FECHA SERVICIO": "fecha_servicio",
-    "CONCEPTO (DENOMINACIÓN EVENTO ASOCIADO)": "concepto",
-    "DESCRIPCIÓN": "descripcion",
-    "PALÉS IN": "pales_in",
-    "CAJAS IN": "cajas_in",
-    "M3 IN": "m3_in",
-    "PALÉS OUT": "pales_out",
-    "M3 OUT": "m3_out",
-    "CAJAS OUT": "cajas_out",
-    "PESO (KG)": "peso_kg",
-    "Volumen": "volumen_m3_total",
-    "URGENCIA": "urgencia",
-    "PROVINCIA DESTINO": "provincia_destino",
-}
-
-MOV_CANONICAL = {
-    "Tipo movimiento": "tipo_movimiento",
-    "Fecha inicio": "fecha_inicio",
-    "Fecha finalización": "fecha_fin",
-    "Artículo": "articulo",
-    "Cantidad": "cantidad",
-    "Pedido": "pedido",
-    "Pedido externo": "pedido_externo",
-    "Cliente": "cliente",
-}
 
 URGENCY_MAP = {
     "": "DESCONOCIDA",
@@ -67,7 +39,7 @@ NUMERIC_SERVICE_COLS = [
     "cajas_out",
     "m3_out",
     "peso_kg",
-    "volumen_m3_total",
+    "volumen",
 ]
 
 
@@ -105,6 +77,39 @@ def _coerce_numeric(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
             out[c] = np.nan
         out[c] = pd.to_numeric(out[c], errors="coerce")
     return out
+
+
+def _is_non_empty_text(value: object) -> bool:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    text = str(value).strip().upper()
+    return text not in {"", "NAN", "NONE", "NULL"}
+
+
+def _parse_datetime_with_flag(
+    series: pd.Series,
+    *,
+    dayfirst: bool = False,
+    normalize: bool = False,
+) -> tuple[pd.Series, pd.Series]:
+    parsed = pd.to_datetime(series, errors="coerce", dayfirst=dayfirst)
+    failed = (
+        parsed.isna()
+        & series.notna()
+        & series.astype(str).str.strip().ne("")
+        & ~series.astype(str).str.strip().str.upper().isin(["NAN", "NONE", "NULL"])
+    )
+    if normalize:
+        parsed = parsed.dt.normalize()
+    return parsed, failed.astype(int)
+
+
+def _choose_first_code_from_text_columns(df: pd.DataFrame, text_cols: list[str]) -> pd.Series:
+    result = pd.Series(pd.NA, index=df.index, dtype="object")
+    for col in text_cols:
+        extracted = df[col].map(extract_code_from_text)
+        result = result.where(result.notna(), extracted)
+    return result
 
 
 def _safe_group_median(df: pd.DataFrame, col: str) -> pd.Series:
@@ -151,7 +156,7 @@ def _impute_services(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_peso_facturable(row: pd.Series) -> float:
-    base = max(float(row["peso_kg"]), float(row["volumen_m3_total"]) * 270.0)
+    base = max(float(row["peso_kg"]), float(row["volumen"]) * 270.0)
     return math.ceil(base * 10.0) / 10.0
 
 
@@ -197,30 +202,39 @@ def clean_albaranes(raw: pd.DataFrame, cutoff_date: date | pd.Timestamp | None =
         if cutoff_date is not None
         else pd.Timestamp.today().normalize()
     )
-    df = raw.rename(columns=ALB_CANONICAL).copy()
+    df = raw.copy()
 
-    required = ["item", "fecha_servicio"]
+    required = ["fecha_servicio", "descripcion"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Albaranes sin columnas obligatorias: {missing}")
 
-    df["fecha_servicio"] = pd.to_datetime(df["fecha_servicio"], errors="coerce").dt.normalize()
-    df = df.dropna(subset=["fecha_servicio"]).copy()
-
-    for c in ["concepto", "descripcion", "provincia_destino", "urgencia", "item"]:
+    for c in ["item", "concepto_evento", "descripcion", "provincia_destino", "urgencia", "festivo"]:
         if c not in df.columns:
             df[c] = None
 
-    df["codigo_norm"] = df["item"].map(normalize_code)
-    df["service_id"] = build_service_id(df["codigo_norm"], df["fecha_servicio"])
+    df["fecha_servicio"], failed_fecha_servicio = _parse_datetime_with_flag(
+        df["fecha_servicio"], dayfirst=True, normalize=True
+    )
+    df["fecha_servicio_date_parse_failed"] = failed_fecha_servicio
+
+    failed_count = int(df["fecha_servicio_date_parse_failed"].sum())
+    if failed_count > 0:
+        LOGGER.warning("fecha_servicio parse failed en %d filas de albaranes", failed_count)
+
+    df["codigo_raw_alb"] = df["descripcion"].map(extract_code_from_text)
+    df["codigo_norm_alb"] = df["codigo_raw_alb"].map(normalize_code)
+    df["codigo_norm"] = df["codigo_norm_alb"]
+    df["service_id"] = build_service_id(df["codigo_norm_alb"], df["fecha_servicio"])
 
     df["urgencia_norm"] = df["urgencia"].map(normalize_urgency)
+    df["concepto"] = df["concepto_evento"]
 
     df = _coerce_numeric(df, NUMERIC_SERVICE_COLS)
 
     type_rule = df.apply(
         lambda r: classify_service_type(
-            r.get("codigo_norm"), r.get("concepto"), r.get("m3_in"), r.get("m3_out")
+            r.get("codigo_norm_alb"), r.get("concepto_evento"), r.get("m3_in"), r.get("m3_out")
         ),
         axis=1,
         result_type="expand",
@@ -229,32 +243,92 @@ def clean_albaranes(raw: pd.DataFrame, cutoff_date: date | pd.Timestamp | None =
     df["tipo_servicio_regla"] = type_rule[1]
 
     df = _impute_services(df)
+    df["volumen_m3_total"] = df["volumen"]
     df = _split_peso_facturable(df)
 
-    df["is_historical"] = (df["fecha_servicio"] <= cutoff).astype(int)
+    df["is_historical"] = (
+        df["fecha_servicio"].notna() & (df["fecha_servicio"] <= cutoff)
+    ).astype(int)
+
     LOGGER.info(
-        "Albaranes limpios: %d filas (historico=%d, futuro_planificado=%d)",
+        "Albaranes limpios: %d filas (historico=%d, futuro_planificado=%d, fecha_parse_failed=%d)",
         len(df),
         int(df["is_historical"].sum()),
         int((1 - df["is_historical"]).sum()),
+        failed_count,
     )
     return df
 
 
 def clean_movimientos(raw: pd.DataFrame) -> pd.DataFrame:
-    df = raw.rename(columns=MOV_CANONICAL).copy()
-    required = ["fecha_inicio", "pedido_externo", "cantidad", "articulo", "tipo_movimiento"]
+    df = raw.copy()
+    required = [
+        "tipo_movimiento",
+        "fecha_inicio",
+        "fecha_finalizacion",
+        "articulo",
+        "cantidad",
+        "pedido",
+        "pedido_externo",
+    ]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Movimientos sin columnas obligatorias: {missing}")
 
-    df["fecha_inicio"] = pd.to_datetime(df["fecha_inicio"], errors="coerce")
-    df = df.dropna(subset=["fecha_inicio"]).copy()
+    df["fecha_inicio"], failed_fecha_inicio = _parse_datetime_with_flag(df["fecha_inicio"], dayfirst=False)
+    df["fecha_inicio_date_parse_failed"] = failed_fecha_inicio
     df["fecha_inicio_dia"] = df["fecha_inicio"].dt.normalize()
 
-    df["pedido_externo_norm"] = df["pedido_externo"].map(normalize_code)
-    df["cantidad"] = pd.to_numeric(df["cantidad"], errors="coerce")
-    df["cantidad"] = df["cantidad"].fillna(0.0)
+    df["fecha_finalizacion"], failed_fecha_fin = _parse_datetime_with_flag(
+        df["fecha_finalizacion"], dayfirst=True
+    )
+    df["fecha_finalizacion_date_parse_failed"] = failed_fecha_fin
 
-    df["is_internal_or_unattributable"] = df["pedido_externo_norm"].isna().astype(int)
+    fail_inicio_count = int(df["fecha_inicio_date_parse_failed"].sum())
+    fail_fin_count = int(df["fecha_finalizacion_date_parse_failed"].sum())
+    if fail_inicio_count > 0:
+        LOGGER.warning("fecha_inicio parse failed en %d filas de movimientos", fail_inicio_count)
+    if fail_fin_count > 0:
+        LOGGER.warning("fecha_finalizacion parse failed en %d filas de movimientos", fail_fin_count)
+
+    df["cantidad"] = pd.to_numeric(df["cantidad"], errors="coerce").fillna(0.0)
+
+    text_cols = [
+        c
+        for c in df.columns
+        if pd.api.types.is_object_dtype(df[c]) or pd.api.types.is_string_dtype(df[c])
+    ]
+    regex_any = _choose_first_code_from_text_columns(df, text_cols)
+
+    codigo_raw_mov = pd.Series(pd.NA, index=df.index, dtype="object")
+    codigo_source = pd.Series(pd.NA, index=df.index, dtype="object")
+
+    has_pedido_externo = df["pedido_externo"].map(_is_non_empty_text)
+    code_pedido_externo = df["pedido_externo"].map(extract_code_from_text)
+    use_pedido_externo = has_pedido_externo & code_pedido_externo.notna()
+    codigo_raw_mov = codigo_raw_mov.where(~use_pedido_externo, code_pedido_externo)
+    codigo_source = codigo_source.where(~use_pedido_externo, "pedido_externo")
+
+    has_pedido = df["pedido"].map(_is_non_empty_text)
+    code_pedido = df["pedido"].map(extract_code_from_text)
+    use_pedido = codigo_raw_mov.isna() & has_pedido & code_pedido.notna()
+    codigo_raw_mov = codigo_raw_mov.where(~use_pedido, code_pedido)
+    codigo_source = codigo_source.where(~use_pedido, "pedido")
+
+    use_regex = codigo_raw_mov.isna() & regex_any.notna()
+    codigo_raw_mov = codigo_raw_mov.where(~use_regex, regex_any)
+    codigo_source = codigo_source.where(~use_regex, "regex_otro")
+
+    df["codigo_raw_mov"] = codigo_raw_mov.where(codigo_raw_mov.notna(), None)
+    df["codigo_norm_mov"] = df["codigo_raw_mov"].map(normalize_code)
+    df["codigo_source"] = codigo_source.where(codigo_source.notna(), None)
+
+    df["codigo_raw_mov_regex_otro"] = regex_any.where(regex_any.notna(), None)
+    df["codigo_norm_mov_regex_otro"] = df["codigo_raw_mov_regex_otro"].map(normalize_code)
+
+    # Backward compatibility with existing downstream modules.
+    df["pedido_externo_norm"] = df["codigo_norm_mov"]
+    df["fecha_fin"] = df["fecha_finalizacion"]
+
+    df["is_internal_or_unattributable"] = df["codigo_norm_mov"].isna().astype(int)
     return df
