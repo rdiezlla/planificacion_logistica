@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #111827;
+  background:
+    radial-gradient(circle at top left, rgba(235, 106, 155, 0.14), transparent 26%),
+    radial-gradient(circle at top right, rgba(107, 200, 163, 0.16), transparent 22%),
+    linear-gradient(180deg, #ece8e1 0%, #f6f2ec 44%, #efebe4 100%);
+  font-family: Aptos, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #efebe4;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(17, 24, 39, 0.04) 1px, transparent 0);
+  background-size: 18px 18px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}

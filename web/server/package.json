@@ -1,0 +1,12 @@
+{
+  "name": "planificacion-logistica-dashboard-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
