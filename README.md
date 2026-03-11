@@ -7,6 +7,11 @@ Pipeline completo en Python para forecasting con dos ejes temporales independien
 
 Metrica principal de almacen para planificacion operativa: `picking_movs` (lineas de movimiento `PI`), no unidades.
 
+El repo incluye ademas:
+
+1. `src_basket/` + `basket_main.py` para basket analysis operativo (`pedido x propietario`).
+2. `src_abc/` + `abc_main.py` para Pareto / clasificacion ABC de picking por SKU.
+
 ## Estructura
 
 - `src/io.py`: carga de inputs + estandarizacion robusta de headers.
@@ -25,6 +30,11 @@ Metrica principal de almacen para planificacion operativa: `picking_movs` (linea
 - `src/train.py`: entrenamiento de modelos y persistencia.
 - `src/predict.py`: prediccion con artefactos.
 - `src/report.py`: graficos de diagnostico.
+- `src_abc/load.py`: carga reutilizando lineas `PI` limpias del basket.
+- `src_abc/abc_core.py`: agregacion por periodo y clasificacion ABC.
+- `src_abc/abc_compare.py`: cambios entre periodos y candidatos de layout.
+- `src_abc/report.py`: plots ABC + README de apoyo.
+- `abc_main.py`: CLI del analisis Pareto / ABC.
 - `main.py`: orquestacion CLI end-to-end.
 
 ## Inputs esperados (root del repo)
@@ -131,6 +141,34 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .venv\Scripts\activate
 python main.py --horizon_days 60 --freq both --use_weather false --assignment_window_days 120
 ```
+
+## Analisis ABC de picking
+
+El analisis ABC usa solo lineas `PI` de `movimientos.xlsx` y clasifica los SKUs por `pick_lines` (numero de movimientos), no por unidades.
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\activate
+python abc_main.py --input movimientos.xlsx --a-threshold 0.80 --b-threshold 0.95
+```
+
+Genera:
+
+- `outputs_abc/abc_picking_annual.csv`
+- `outputs_abc/abc_picking_quarterly.csv`
+- `outputs_abc/abc_picking_ytd.csv`
+- `outputs_abc/abc_summary_by_period.csv`
+- `outputs_abc/abc_top_changes.csv`
+- `outputs_abc/abc_for_layout_candidates.csv`
+- `outputs_abc/plots/*.png`
+- `README_ABC.md`
+
+Interpretacion operativa:
+
+- `A`: concentra la mayor parte de los `pick_lines`; candidato a primeras posiciones o zonas calientes.
+- `B`: rotacion media; mantener accesible, sin sobredimensionar espacio premium.
+- `C`: baja prioridad; revisar si ocupa ubicaciones demasiado valiosas.
+- `abc_for_layout_candidates.csv`: tabla accionable para slotting con tags `KEEP_FRONT`, `REVIEW_UPGRADE`, `REVIEW_DOWNGRADE`, `LOW_PRIORITY`.
 
 ## Logica de workload esperado (picking solo entregas)
 

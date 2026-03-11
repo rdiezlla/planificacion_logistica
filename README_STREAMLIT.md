@@ -30,8 +30,9 @@ La app lee por defecto desde:
 
 - `outputs/`
 - `outputs_basket/`
+- `outputs_abc/`
 
-Puedes cambiar ambas rutas desde el modulo `Settings`.
+Puedes cambiar esas rutas desde el modulo `Settings`.
 
 ## Archivos usados por modulo
 
@@ -74,12 +75,23 @@ Puedes cambiar ambas rutas desde el modulo `Settings`.
 - `outputs_basket/sku_neighbors.csv` si existe
 - `outputs_basket/plots/*` si existe
 
+### ABC Picking
+
+- `outputs_abc/abc_picking_annual.csv`
+- `outputs_abc/abc_picking_quarterly.csv`
+- `outputs_abc/abc_picking_ytd.csv`
+- `outputs_abc/abc_summary_by_period.csv`
+- `outputs_abc/abc_top_changes.csv`
+- `outputs_abc/abc_for_layout_candidates.csv`
+- `outputs_abc/plots/*` si existe
+
 ## Cambio de carpeta base
 
 Desde `Settings` puedes editar:
 
 - ruta de `outputs`
 - ruta de `outputs_basket`
+- ruta de `outputs_abc`
 - escenario por defecto
 - rango por defecto
 - modo oscuro
@@ -92,6 +104,19 @@ Tambien puedes usar el boton `Recargar datos` para limpiar cache y releer disco.
 - Usa `Pathlib` y lectura local de CSV.
 - Si falta un archivo, la app no se rompe: muestra aviso y sigue cargando los modulos disponibles.
 - `rules_oper.csv` puede ser pesado; la app lo lee en chunks filtrados para evitar cargas completas cuando no haga falta.
+- Los ficheros ABC se leen preservando SKU como texto para no perder ceros a la izquierda.
+
+## Nuevo modulo: ABC Picking
+
+Sirve para apoyar decisiones de layout y slotting con una vista Pareto por SKU basada en `pick_lines`.
+
+Incluye:
+
+- KPIs de concentracion de clase A.
+- Pareto interactivo por vista `anual`, `trimestral` o `YTD`.
+- Tabla exportable con `pick_lines`, `pick_qty`, `n_orders`, acumulado y clase ABC.
+- Comparativa de cambios entre periodos (`A->B`, `B->A`, etc.).
+- Vista de recomendaciones operativas desde `abc_for_layout_candidates.csv`.
 
 ## Arquitectura
 

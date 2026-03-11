@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from streamlit_app.components.layout import card_title, render_page_header
-from streamlit_app.components.loaders import BASKET_FILES, FORECAST_FILES
+from streamlit_app.components.loaders import ABC_FILES, BASKET_FILES, FORECAST_FILES
 from streamlit_app.utils.cache import clear_all_caches
 from streamlit_app.utils.formatters import fmt_date, fmt_number
 from streamlit_app.utils.io import file_info
@@ -25,6 +25,7 @@ render_page_header(
 with st.form("settings_form"):
     outputs_dir = st.text_input("Carpeta outputs", value=st.session_state["base_outputs_dir"])
     outputs_basket_dir = st.text_input("Carpeta outputs_basket", value=st.session_state["base_outputs_basket_dir"])
+    outputs_abc_dir = st.text_input("Carpeta outputs_abc", value=st.session_state["base_outputs_abc_dir"])
     default_scenario = st.selectbox("Escenario por defecto", ["P50", "P80"], index=0 if st.session_state.get("default_scenario", "P50") == "P50" else 1)
     default_range = st.selectbox("Rango por defecto", ["8 semanas", "12 semanas", "26 semanas", "custom"], index=["8 semanas", "12 semanas", "26 semanas", "custom"].index(st.session_state.get("default_range", "12 semanas")))
     dark_mode = st.checkbox("Modo oscuro", value=bool(st.session_state.get("dark_mode", False)))
@@ -33,6 +34,7 @@ with st.form("settings_form"):
 if submitted:
     st.session_state["base_outputs_dir"] = outputs_dir
     st.session_state["base_outputs_basket_dir"] = outputs_basket_dir
+    st.session_state["base_outputs_abc_dir"] = outputs_abc_dir
     st.session_state["default_scenario"] = default_scenario
     st.session_state["default_range"] = default_range
     st.session_state["dark_mode"] = dark_mode
@@ -65,8 +67,9 @@ def _build_status_table(base_dir: str, files_map: dict[str, str]) -> pd.DataFram
 
 forecast_status = _build_status_table(st.session_state["base_outputs_dir"], FORECAST_FILES)
 basket_status = _build_status_table(st.session_state["base_outputs_basket_dir"], BASKET_FILES)
+abc_status = _build_status_table(st.session_state["base_outputs_abc_dir"], ABC_FILES)
 all_modified = pd.to_datetime(
-    pd.concat([forecast_status["modificado"], basket_status["modificado"]], ignore_index=True),
+    pd.concat([forecast_status["modificado"], basket_status["modificado"], abc_status["modificado"]], ignore_index=True),
     format="%d/%m/%Y",
     errors="coerce",
 )
@@ -77,6 +80,7 @@ with col2:
     card_title("Carpetas activas")
     st.write(f"`outputs`: {st.session_state['base_outputs_dir']}")
     st.write(f"`outputs_basket`: {st.session_state['base_outputs_basket_dir']}")
+    st.write(f"`outputs_abc`: {st.session_state['base_outputs_abc_dir']}")
     st.write(f"Ultima fecha detectada: {fmt_date(last_modified)}")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -88,4 +92,9 @@ st.markdown("</div>", unsafe_allow_html=True)
 st.markdown('<div class="app-card">', unsafe_allow_html=True)
 card_title("Estado de archivos - basket")
 st.dataframe(basket_status, use_container_width=True, hide_index=True)
+st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown('<div class="app-card">', unsafe_allow_html=True)
+card_title("Estado de archivos - ABC")
+st.dataframe(abc_status, use_container_width=True, hide_index=True)
 st.markdown("</div>", unsafe_allow_html=True)

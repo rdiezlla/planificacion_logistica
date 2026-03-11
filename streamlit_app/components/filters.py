@@ -10,6 +10,7 @@ from streamlit_app.utils.business_logic import RangeSelection
 DEFAULTS = {
     "base_outputs_dir": "",
     "base_outputs_basket_dir": "",
+    "base_outputs_abc_dir": "",
     "default_scenario": "P50",
     "default_range": "12 semanas",
     "dark_mode": False,
@@ -19,6 +20,7 @@ DEFAULTS = {
 def init_app_state(project_root: Path) -> None:
     st.session_state.setdefault("base_outputs_dir", str(project_root / "outputs"))
     st.session_state.setdefault("base_outputs_basket_dir", str(project_root / "outputs_basket"))
+    st.session_state.setdefault("base_outputs_abc_dir", str(project_root / "outputs_abc"))
     st.session_state.setdefault("default_scenario", DEFAULTS["default_scenario"])
     st.session_state.setdefault("default_range", DEFAULTS["default_range"])
     st.session_state.setdefault("dark_mode", DEFAULTS["dark_mode"])

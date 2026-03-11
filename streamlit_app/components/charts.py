@@ -10,6 +10,7 @@ IN_COLOR = "#f59e0b"
 PICKING_COLOR = "#4338ca"
 QUALITY_COLOR = "#64748b"
 OPT_COLOR = "#14b8a6"
+ABC_COLOR = "#059669"
 
 
 def line_hist_forecast(df: pd.DataFrame, x: str, y_cols: list[str], names: list[str], colors: list[str], hist_mask: pd.Series | None = None) -> go.Figure:
@@ -85,4 +86,42 @@ def scatter_or_bar(df: pd.DataFrame, x: str, y: str, color: str) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
+    return fig
+
+
+def pareto_chart(df: pd.DataFrame, *, sku_col: str = "sku", value_col: str = "pick_lines", cumulative_col: str = "cumulative_pct", class_col: str = "abc_class") -> go.Figure:
+    view = df.copy()
+    if class_col not in view.columns:
+        view[class_col] = "A"
+    color_map = {"A": "#0f766e", "B": "#f59e0b", "C": "#94a3b8"}
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=view[sku_col].astype(str),
+            y=pd.to_numeric(view[value_col], errors="coerce"),
+            marker=dict(color=view[class_col].map(color_map).fillna(ABC_COLOR)),
+            name="pick_lines",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=view[sku_col].astype(str),
+            y=pd.to_numeric(view[cumulative_col], errors="coerce") * 100.0,
+            mode="lines+markers",
+            line=dict(color="#1e293b", width=2.5),
+            name="cumulative %",
+            yaxis="y2",
+        )
+    )
+    fig.update_layout(
+        margin=dict(l=12, r=12, t=8, b=8),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        yaxis=dict(title="pick_lines", gridcolor="rgba(148,163,184,0.2)"),
+        yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 100]),
+        hovermode="x unified",
+    )
+    fig.add_hline(y=80, yref="y2", line_dash="dash", line_color="#0f766e", opacity=0.7)
+    fig.add_hline(y=95, yref="y2", line_dash="dash", line_color="#f59e0b", opacity=0.7)
+    fig.update_xaxes(showgrid=False, tickangle=-45)
     return fig

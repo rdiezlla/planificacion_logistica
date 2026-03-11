@@ -30,7 +30,8 @@ pages = [
     st.Page(str(APP_DIR / "pages" / "03_Picking.py"), title="Picking", icon=":material/inventory_2:"),
     st.Page(str(APP_DIR / "pages" / "04_Calidad_modelo.py"), title="Calidad del modelo", icon=":material/query_stats:"),
     st.Page(str(APP_DIR / "pages" / "05_Optimizacion_picking.py"), title="Optimizacion picking", icon=":material/hub:"),
-    st.Page(str(APP_DIR / "pages" / "06_Settings.py"), title="Settings", icon=":material/settings:"),
+    st.Page(str(APP_DIR / "pages" / "06_ABC_Picking.py"), title="ABC Picking", icon=":material/stacked_bar_chart:"),
+    st.Page(str(APP_DIR / "pages" / "07_Settings.py"), title="Settings", icon=":material/settings:"),
 ]
 
 navigation = st.navigation(pages, position="sidebar")

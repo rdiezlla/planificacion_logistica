@@ -16,13 +16,19 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def read_csv_cached(path_str: str, usecols: tuple[str, ...] | None = None) -> pd.DataFrame:
+def read_csv_cached(
+    path_str: str,
+    usecols: tuple[str, ...] | None = None,
+    dtype: dict[str, str] | None = None,
+) -> pd.DataFrame:
     path = Path(path_str)
     if not path.exists():
         raise FileNotFoundError(path)
     kwargs = {"low_memory": False}
     if usecols:
         kwargs["usecols"] = list(usecols)
+    if dtype:
+        kwargs["dtype"] = dtype
     df = pd.read_csv(path, **kwargs)
     return normalize_columns(df)
 

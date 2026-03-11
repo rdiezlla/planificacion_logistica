@@ -32,13 +32,26 @@ BASKET_FILES = {
     "sku_neighbors": "sku_neighbors.csv",
 }
 
+ABC_FILES = {
+    "abc_picking_annual": "abc_picking_annual.csv",
+    "abc_picking_quarterly": "abc_picking_quarterly.csv",
+    "abc_picking_ytd": "abc_picking_ytd.csv",
+    "abc_summary_by_period": "abc_summary_by_period.csv",
+    "abc_top_changes": "abc_top_changes.csv",
+    "abc_for_layout_candidates": "abc_for_layout_candidates.csv",
+}
 
-def _safe_read(path: Path, usecols: tuple[str, ...] | None = None) -> tuple[pd.DataFrame | None, dict[str, object]]:
+
+def _safe_read(
+    path: Path,
+    usecols: tuple[str, ...] | None = None,
+    dtype: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame | None, dict[str, object]]:
     info = file_info(path)
     if not info["exists"]:
         return None, info
     try:
-        return read_csv_cached(str(path), usecols=usecols), info
+        return read_csv_cached(str(path), usecols=usecols, dtype=dtype), info
     except Exception as exc:
         st.warning(f"No se pudo leer `{path.name}`: {exc}")
         return None, info
@@ -65,6 +78,70 @@ def load_basket_bundle(outputs_basket_dir: str | Path) -> dict[str, object]:
     }
     for key, filename in BASKET_FILES.items():
         df, info = _safe_read(root / filename, usecols=small_usecols.get(key))
+        bundle["data"][key] = df
+        bundle["files"][key] = info
+    plots_dir = root / "plots"
+    if plots_dir.exists():
+        bundle["plots"] = sorted(plots_dir.glob("*"))
+    return bundle
+
+
+def load_abc_bundle(outputs_abc_dir: str | Path) -> dict[str, object]:
+    root = Path(outputs_abc_dir)
+    bundle: dict[str, object] = {"data": {}, "files": {}, "plots": []}
+    dtype_map = {
+        "abc_picking_annual": {
+            "sku": "string",
+            "denominacion": "string",
+            "period_type": "string",
+            "period_label": "string",
+            "quarter": "string",
+            "abc_class": "string",
+        },
+        "abc_picking_quarterly": {
+            "sku": "string",
+            "denominacion": "string",
+            "period_type": "string",
+            "period_label": "string",
+            "quarter": "string",
+            "abc_class": "string",
+        },
+        "abc_picking_ytd": {
+            "sku": "string",
+            "denominacion": "string",
+            "period_type": "string",
+            "period_label": "string",
+            "quarter": "string",
+            "abc_class": "string",
+        },
+        "abc_summary_by_period": {
+            "period_type": "string",
+            "period_label": "string",
+            "quarter": "string",
+            "top_sku": "string",
+        },
+        "abc_top_changes": {
+            "sku": "string",
+            "period_type": "string",
+            "prev_period": "string",
+            "curr_period": "string",
+            "prev_abc_class": "string",
+            "curr_abc_class": "string",
+            "class_change": "string",
+            "movement_direction": "string",
+        },
+        "abc_for_layout_candidates": {
+            "sku": "string",
+            "denominacion": "string",
+            "latest_period_type": "string",
+            "latest_period": "string",
+            "latest_abc_class": "string",
+            "change_vs_prev_period": "string",
+            "recommendation_tag": "string",
+        },
+    }
+    for key, filename in ABC_FILES.items():
+        df, info = _safe_read(root / filename, dtype=dtype_map.get(key))
         bundle["data"][key] = df
         bundle["files"][key] = info
     plots_dir = root / "plots"
