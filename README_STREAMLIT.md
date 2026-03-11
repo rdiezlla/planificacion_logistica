@@ -108,14 +108,18 @@ Tambien puedes usar el boton `Recargar datos` para limpiar cache y releer disco.
 
 ## Nuevo modulo: ABC Picking
 
-Sirve para apoyar decisiones de layout y slotting con una vista Pareto por SKU basada en `pick_lines`.
+Sirve para apoyar decisiones de layout y slotting con una vista Pareto por SKU basada en `pick_lines`, ahora extendida a `ABC-XYZ` y filtrado real por propietario.
 
 Incluye:
 
 - KPIs de concentracion de clase A.
+- KPIs adicionales de `AX`, `% pick_lines AX` y SKUs volatiles `Z`.
 - Pareto interactivo por vista `anual`, `trimestral` o `YTD`.
-- Tabla exportable con `pick_lines`, `pick_qty`, `n_orders`, acumulado y clase ABC.
-- Comparativa de cambios entre periodos (`A->B`, `B->A`, etc.).
+- Filtro `owner_scope` que trabaja sobre outputs recalculados por propietario.
+- Modo `ABC` o `ABC-XYZ`.
+- Scatter `mean_weekly_pick_lines` vs `cv_weekly` para separar rotacion y estabilidad.
+- Tabla exportable con `pick_lines`, `pick_qty`, `n_orders`, acumulado, `xyz_class`, `abc_xyz_class` y recomendacion.
+- Comparativa de cambios entre periodos (`A->B`, `B->A`, `AX->AZ`, etc.).
 - Vista de recomendaciones operativas desde `abc_for_layout_candidates.csv`.
 
 ## Arquitectura

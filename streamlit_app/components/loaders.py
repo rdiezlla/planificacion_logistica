@@ -37,6 +37,8 @@ ABC_FILES = {
     "abc_picking_quarterly": "abc_picking_quarterly.csv",
     "abc_picking_ytd": "abc_picking_ytd.csv",
     "abc_summary_by_period": "abc_summary_by_period.csv",
+    "abc_xyz_summary_by_period": "abc_xyz_summary_by_period.csv",
+    "abc_owner_summary": "abc_owner_summary.csv",
     "abc_top_changes": "abc_top_changes.csv",
     "abc_for_layout_candidates": "abc_for_layout_candidates.csv",
 }
@@ -91,63 +93,147 @@ def load_abc_bundle(outputs_abc_dir: str | Path) -> dict[str, object]:
     bundle: dict[str, object] = {"data": {}, "files": {}, "plots": []}
     dtype_map = {
         "abc_picking_annual": {
+            "owner_scope": "string",
             "sku": "string",
             "denominacion": "string",
             "period_type": "string",
             "period_label": "string",
             "quarter": "string",
             "abc_class": "string",
+            "xyz_class": "string",
+            "abc_xyz_class": "string",
         },
         "abc_picking_quarterly": {
+            "owner_scope": "string",
             "sku": "string",
             "denominacion": "string",
             "period_type": "string",
             "period_label": "string",
             "quarter": "string",
             "abc_class": "string",
+            "xyz_class": "string",
+            "abc_xyz_class": "string",
         },
         "abc_picking_ytd": {
+            "owner_scope": "string",
             "sku": "string",
             "denominacion": "string",
             "period_type": "string",
             "period_label": "string",
             "quarter": "string",
             "abc_class": "string",
+            "xyz_class": "string",
+            "abc_xyz_class": "string",
         },
         "abc_summary_by_period": {
+            "owner_scope": "string",
             "period_type": "string",
             "period_label": "string",
             "quarter": "string",
             "top_sku": "string",
         },
+        "abc_xyz_summary_by_period": {
+            "owner_scope": "string",
+            "period_type": "string",
+            "period_label": "string",
+        },
+        "abc_owner_summary": {
+            "owner_scope": "string",
+            "top_sku": "string",
+        },
         "abc_top_changes": {
+            "owner_scope": "string",
             "sku": "string",
             "period_type": "string",
             "prev_period": "string",
             "curr_period": "string",
             "prev_abc_class": "string",
             "curr_abc_class": "string",
+            "prev_xyz_class": "string",
+            "curr_xyz_class": "string",
+            "prev_abc_xyz_class": "string",
+            "curr_abc_xyz_class": "string",
             "class_change": "string",
+            "abc_xyz_change": "string",
             "movement_direction": "string",
         },
         "abc_for_layout_candidates": {
+            "owner_scope": "string",
             "sku": "string",
             "denominacion": "string",
             "latest_period_type": "string",
             "latest_period": "string",
             "latest_abc_class": "string",
+            "xyz_class": "string",
+            "abc_xyz_class": "string",
             "change_vs_prev_period": "string",
             "recommendation_tag": "string",
         },
     }
     for key, filename in ABC_FILES.items():
         df, info = _safe_read(root / filename, dtype=dtype_map.get(key))
+        df = _normalize_abc_dataframe(key, df)
         bundle["data"][key] = df
         bundle["files"][key] = info
     plots_dir = root / "plots"
     if plots_dir.exists():
         bundle["plots"] = sorted(plots_dir.glob("*"))
     return bundle
+
+
+def _normalize_abc_dataframe(key: str, df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    if "owner_scope" not in out.columns:
+        out["owner_scope"] = "GLOBAL"
+    out["owner_scope"] = out["owner_scope"].fillna("GLOBAL").astype(str)
+
+    if key.startswith("abc_picking_"):
+        defaults = {
+            "xyz_class": "UNKNOWN",
+            "abc_xyz_class": None,
+            "mean_weekly_pick_lines": 0.0,
+            "std_weekly_pick_lines": 0.0,
+            "cv_weekly": pd.NA,
+            "n_weeks_observed": 0,
+        }
+        for col, default in defaults.items():
+            if col not in out.columns:
+                out[col] = default
+        if "abc_xyz_class" in out.columns:
+            out["abc_xyz_class"] = out["abc_xyz_class"].where(
+                out["abc_xyz_class"].notna(),
+                out["abc_class"].fillna("").astype(str) + out["xyz_class"].fillna("UNKNOWN").astype(str),
+            )
+    if key == "abc_for_layout_candidates":
+        defaults = {
+            "xyz_class": "UNKNOWN",
+            "abc_xyz_class": None,
+            "mean_weekly_pick_lines": 0.0,
+            "std_weekly_pick_lines": 0.0,
+            "cv_weekly": pd.NA,
+            "n_weeks_observed": 0,
+            "recommendation_tag": "MONITOR",
+        }
+        for col, default in defaults.items():
+            if col not in out.columns:
+                out[col] = default
+        out["abc_xyz_class"] = out["abc_xyz_class"].where(
+            out["abc_xyz_class"].notna(),
+            out["latest_abc_class"].fillna("").astype(str) + out["xyz_class"].fillna("UNKNOWN").astype(str),
+        )
+    if key == "abc_top_changes":
+        for col in [
+            "prev_xyz_class",
+            "curr_xyz_class",
+            "prev_abc_xyz_class",
+            "curr_abc_xyz_class",
+            "abc_xyz_change",
+        ]:
+            if col not in out.columns:
+                out[col] = pd.NA
+    return out
 
 
 def load_rules_filtered(outputs_basket_dir: str | Path, level: str, min_support: float, min_conf: float, min_lift: float, limit: int = 50000) -> tuple[pd.DataFrame | None, dict[str, object]]:

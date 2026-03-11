@@ -144,12 +144,12 @@ python main.py --horizon_days 60 --freq both --use_weather false --assignment_wi
 
 ## Analisis ABC de picking
 
-El analisis ABC usa solo lineas `PI` de `movimientos.xlsx` y clasifica los SKUs por `pick_lines` (numero de movimientos), no por unidades.
+El analisis ABC-XYZ usa solo lineas `PI` de `movimientos.xlsx` y clasifica los SKUs por `pick_lines` (numero de movimientos), no por unidades.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .venv\Scripts\activate
-python abc_main.py --input movimientos.xlsx --a-threshold 0.80 --b-threshold 0.95
+python abc_main.py --input movimientos.xlsx --a-threshold 0.80 --b-threshold 0.95 --xyz-x-threshold 0.50 --xyz-y-threshold 1.00 --max_owners 10
 ```
 
 Genera:
@@ -158,6 +158,8 @@ Genera:
 - `outputs_abc/abc_picking_quarterly.csv`
 - `outputs_abc/abc_picking_ytd.csv`
 - `outputs_abc/abc_summary_by_period.csv`
+- `outputs_abc/abc_xyz_summary_by_period.csv`
+- `outputs_abc/abc_owner_summary.csv`
 - `outputs_abc/abc_top_changes.csv`
 - `outputs_abc/abc_for_layout_candidates.csv`
 - `outputs_abc/plots/*.png`
@@ -165,10 +167,14 @@ Genera:
 
 Interpretacion operativa:
 
-- `A`: concentra la mayor parte de los `pick_lines`; candidato a primeras posiciones o zonas calientes.
-- `B`: rotacion media; mantener accesible, sin sobredimensionar espacio premium.
-- `C`: baja prioridad; revisar si ocupa ubicaciones demasiado valiosas.
-- `abc_for_layout_candidates.csv`: tabla accionable para slotting con tags `KEEP_FRONT`, `REVIEW_UPGRADE`, `REVIEW_DOWNGRADE`, `LOW_PRIORITY`.
+- `ABC`: importancia operativa por `pick_lines`.
+- `XYZ`: estabilidad / variabilidad semanal por SKU.
+- `AX`: alta rotacion y estable; candidato premium mas claro.
+- `AZ`: alta rotacion pero volatil; premium con flexibilidad y vigilancia de picos.
+- `BZ`: rotacion media volatil; monitorizar antes de inmovilizar layout.
+- `CZ`: baja prioridad; revisar uso de espacio.
+- `owner_scope`: permite analizar `GLOBAL` o un propietario concreto, afectando al calculo del ranking.
+- `abc_for_layout_candidates.csv`: tabla accionable para slotting con tags como `KEEP_FRONT_STABLE`, `KEEP_FRONT_FLEX`, `ACCESSIBLE_STABLE`, `MONITOR_VOLATILE`, `REVIEW_SPACE`.
 
 ## Logica de workload esperado (picking solo entregas)
 

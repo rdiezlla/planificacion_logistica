@@ -10,6 +10,7 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 CLASS_COLORS = {"A": "#0f766e", "B": "#f59e0b", "C": "#94a3b8"}
+XYZ_COLORS = {"X": "#0f766e", "Y": "#f59e0b", "Z": "#ef4444", "LOW_HISTORY": "#6366f1", "UNKNOWN": "#94a3b8"}
 
 
 def _md_table(df: pd.DataFrame) -> str:
@@ -39,14 +40,20 @@ def generate_abc_plots(
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    for year, subset in annual_df.groupby("year", dropna=False):
+    annual_global = _global_view(annual_df)
+    quarterly_global = _global_view(quarterly_df)
+    summary_global = _global_view(summary_df)
+    changes_global = _global_view(top_changes_df)
+    layout_global = _global_view(layout_df)
+
+    for year, subset in annual_global.groupby("year", dropna=False):
         _plot_pareto(
             subset.sort_values("rank_in_period").head(top_n),
             plots_dir / f"pareto_annual_{int(year)}.png",
             title=f"Pareto ABC picking anual {int(year)}",
         )
 
-    for period_label, subset in quarterly_df.groupby("period_label", dropna=False):
+    for period_label, subset in quarterly_global.groupby("period_label", dropna=False):
         safe_label = str(period_label).replace("-", "_")
         _plot_pareto(
             subset.sort_values("rank_in_period").head(top_n),
@@ -54,55 +61,106 @@ def generate_abc_plots(
             title=f"Pareto ABC picking {period_label}",
         )
 
-    _plot_year_comparison(summary_df, plots_dir / "abc_year_comparison.png")
-    _plot_class_change_table(top_changes_df, plots_dir / "abc_changes_heatmap.png")
-    _plot_latest_a_skus(layout_df, plots_dir / "abc_top_a_latest.png")
+    _plot_year_comparison(summary_global, plots_dir / "abc_year_comparison.png")
+    _plot_class_change_table(changes_global, plots_dir / "abc_changes_heatmap.png")
+    _plot_latest_a_skus(layout_global, plots_dir / "abc_top_a_latest.png")
+    _plot_latest_xyz_scatter(layout_global, plots_dir / "abc_xyz_scatter_latest.png")
 
 
-def write_readme_abc(path: Path, stats, summary_df: pd.DataFrame, layout_df: pd.DataFrame, top_changes_df: pd.DataFrame) -> None:
-    latest_summary = summary_df.sort_values("period_end_date").tail(1)
+def write_readme_abc(
+    path: Path,
+    stats,
+    summary_df: pd.DataFrame,
+    abc_xyz_summary_df: pd.DataFrame,
+    owner_summary_df: pd.DataFrame,
+    layout_df: pd.DataFrame,
+    top_changes_df: pd.DataFrame,
+) -> None:
+    summary_global = _global_view(summary_df)
+    abc_xyz_global = _global_view(abc_xyz_summary_df)
+    layout_global = _global_view(layout_df)
+    changes_global = _global_view(top_changes_df)
+
+    latest_summary = summary_global.sort_values("period_end_date").tail(1)
     latest_label = latest_summary["period_label"].iloc[0] if not latest_summary.empty else "-"
     latest_a_share = latest_summary["pct_pick_lines_A"].iloc[0] if not latest_summary.empty else 0.0
-    top_layout = layout_df.head(15)
-    biggest_moves = top_changes_df.loc[top_changes_df["movement_direction"].ne("stable")].head(20)
+    latest_layout = layout_global.head(15)
+    biggest_moves = changes_global.loc[changes_global["movement_direction"].ne("stable")].head(20)
+    xyz_latest = abc_xyz_global.sort_values("period_label").tail(1)
+    owner_preview = owner_summary_df.head(15)
 
     lines = [
-        "# ABC Picking",
+        "# ABC Picking + XYZ",
         "",
-        "Analisis Pareto / clasificacion ABC de picking basado en `pick_lines` (numero de movimientos PI por SKU).",
+        "Analisis Pareto / clasificacion ABC-XYZ de picking basado en `pick_lines` (numero de movimientos PI por SKU).",
         "",
-        "## Regla principal",
+        "## Base metodologica",
         "",
-        "- La clasificacion ABC se calcula por `pick_lines`, no por unidades.",
-        "- Las metricas secundarias (`pick_qty`, `n_orders`, `n_days_active`) son auxiliares para layout y slotting.",
+        "- `ABC` se calcula por `pick_lines`, no por unidades. Esto refleja mejor la carga operativa real del almacen.",
+        "- `XYZ` se calcula con la variabilidad semanal de `pick_lines` por SKU dentro de cada periodo.",
+        "- `X`: estable (`cv_weekly <= 0.50`), `Y`: variabilidad media, `Z`: alta volatilidad.",
+        "- Regla robusta: si un SKU tiene menos de 3 semanas activas se marca `LOW_HISTORY`; si el promedio semanal es 0 se marca `UNKNOWN`.",
+        "",
+        "## Filtro por propietario",
+        "",
+        "- El pipeline genera vision `GLOBAL` y vision por propietario en los mismos CSV, usando `owner_scope`.",
+        "- El filtro por propietario afecta al calculo, no solo a la visualizacion.",
         "",
         "## Cobertura del analisis",
         "",
         f"- Lineas PI validas con fecha: {stats.n_rows_after_date_filter}",
         f"- SKUs analizados: {stats.n_unique_skus}",
+        f"- Owners analizados: {stats.n_unique_owners}",
         f"- Rango de fechas: {stats.min_pick_date} -> {stats.max_pick_date}",
         f"- Registros descartados por fecha invalida: {stats.n_rows_dropped_invalid_date}",
         "",
-        "## Como usarlo para layout",
+        "## Interpretacion operativa de ABC-XYZ",
         "",
-        "- `A`: SKUs de mayor concentracion operativa. Son candidatos a posiciones frontales o zonas calientes.",
-        "- `B`: mantener accesibles, pero sin consumir ubicaciones premium si no hay restriccion operativa.",
-        "- `C`: baja prioridad; revisar si ocupan espacio prime de forma innecesaria.",
+        "- `AX`: alta rotacion y estable. Primeras posiciones / zonas calientes muy claras.",
+        "- `AY`: alta rotacion con variabilidad media. Mantener muy accesible y monitorizar cambios.",
+        "- `AZ`: alta rotacion pero volatil. Mantener premium, con flexibilidad ante picos.",
+        "- `BX`: accesible y estable, sin consumir tanto espacio premium.",
+        "- `BZ`: rotacion media y volatil. Monitorizar antes de fijar layout definitivo.",
+        "- `CZ`: baja prioridad y alta volatilidad. Revisar espacio y evitar sobreasignacion.",
         "",
-        f"Ultimo periodo disponible: `{latest_label}`",
+        f"Ultimo periodo global disponible: `{latest_label}`",
         f"Concentracion de pick_lines en clase A: `{latest_a_share:.1%}`",
         "",
-        "## Candidatos de layout (ultimo periodo)",
+        "## Propietarios con mayor peso",
         "",
-        _md_table(top_layout),
+        _md_table(owner_preview),
+        "",
+        "## Candidatos de layout (GLOBAL, ultimo periodo)",
+        "",
+        _md_table(latest_layout),
+        "",
+        "## Resumen ABC-XYZ del ultimo periodo global",
+        "",
+        _md_table(xyz_latest),
         "",
         "## Cambios relevantes entre periodos",
         "",
         _md_table(biggest_moves),
         "",
+        "## Recomendaciones operativas",
+        "",
+        "- `AX -> KEEP_FRONT_STABLE`: primeras posiciones y slotting muy estable.",
+        "- `AZ -> KEEP_FRONT_FLEX`: primeras posiciones, pero con buffer y flexibilidad para picos.",
+        "- `BZ -> MONITOR_VOLATILE`: revisar tendencia antes de inmovilizar espacio prime.",
+        "- `CZ -> REVIEW_SPACE`: baja prioridad; evaluar si ocupa ubicaciones demasiado valiosas.",
+        "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
     LOGGER.info("README ABC generado: %s", path)
+
+
+def _global_view(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if "owner_scope" not in df.columns:
+        return df.copy()
+    global_df = df.loc[df["owner_scope"].astype(str).eq("GLOBAL")].copy()
+    return global_df if not global_df.empty else df.copy()
 
 
 def _plot_pareto(df: pd.DataFrame, path: Path, title: str) -> None:
@@ -211,6 +269,29 @@ def _plot_latest_a_skus(layout_df: pd.DataFrame, path: Path, top_n: int = 20) ->
     ax.invert_yaxis()
     ax.set_title("Top SKUs A del ultimo periodo")
     ax.set_xlabel("pick_lines")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def _plot_latest_xyz_scatter(layout_df: pd.DataFrame, path: Path, top_n: int = 150) -> None:
+    latest = layout_df.head(top_n).copy()
+    if latest.empty:
+        return
+    latest["xyz_color"] = latest["xyz_class"].map(XYZ_COLORS).fillna("#94a3b8")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(
+        latest["mean_weekly_pick_lines"],
+        latest["cv_weekly"].fillna(0),
+        s=np.clip(latest["latest_pick_lines"].fillna(0) * 1.2, 20, 350),
+        c=latest["xyz_color"],
+        alpha=0.7,
+    )
+    ax.axhline(0.5, linestyle="--", linewidth=1, color="#0f766e")
+    ax.axhline(1.0, linestyle="--", linewidth=1, color="#f59e0b")
+    ax.set_title("ABC-XYZ scatter del ultimo periodo (GLOBAL)")
+    ax.set_xlabel("mean_weekly_pick_lines")
+    ax.set_ylabel("cv_weekly")
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
