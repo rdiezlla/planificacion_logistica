@@ -76,83 +76,97 @@ def write_readme_abc(
     layout_df: pd.DataFrame,
     top_changes_df: pd.DataFrame,
 ) -> None:
-    summary_global = _global_view(summary_df)
-    abc_xyz_global = _global_view(abc_xyz_summary_df)
-    layout_global = _global_view(layout_df)
-    changes_global = _global_view(top_changes_df)
+    del abc_xyz_summary_df
+    del owner_summary_df
+    del layout_df
+    del top_changes_df
 
-    latest_summary = summary_global.sort_values("period_end_date").tail(1)
-    latest_label = latest_summary["period_label"].iloc[0] if not latest_summary.empty else "-"
-    latest_a_share = latest_summary["pct_pick_lines_A"].iloc[0] if not latest_summary.empty else 0.0
-    latest_layout = layout_global.head(15)
-    biggest_moves = changes_global.loc[changes_global["movement_direction"].ne("stable")].head(20)
-    xyz_latest = abc_xyz_global.sort_values("period_label").tail(1)
-    owner_preview = owner_summary_df.head(15)
+    summary_global = _global_view(summary_df)
+    latest_summary = pd.DataFrame()
+    if not summary_global.empty:
+        if "period_end_date" in summary_global.columns:
+            latest_summary = summary_global.sort_values("period_end_date").tail(1)
+        else:
+            latest_summary = summary_global.tail(1)
+
+    latest_label = (
+        str(latest_summary["period_label"].iloc[0])
+        if (not latest_summary.empty and "period_label" in latest_summary.columns)
+        else "-"
+    )
+    latest_a_share = (
+        float(latest_summary["pct_pick_lines_A"].iloc[0])
+        if (not latest_summary.empty and "pct_pick_lines_A" in latest_summary.columns)
+        else float("nan")
+    )
 
     lines = [
-        "# ABC Picking + XYZ",
+        "# README_ABC",
         "",
-        "Analisis Pareto / clasificacion ABC-XYZ de picking basado en `pick_lines` (numero de movimientos PI por SKU).",
+        "## Objetivo del modulo",
         "",
-        "## Base metodologica",
+        "`abc_main.py` genera clasificacion ABC-XYZ de picking para priorizar SKU y apoyar decisiones de layout.",
         "",
-        "- `ABC` se calcula por `pick_lines`, no por unidades. Esto refleja mejor la carga operativa real del almacen.",
-        "- `XYZ` se calcula con la variabilidad semanal de `pick_lines` por SKU dentro de cada periodo.",
-        "- `X`: estable (`cv_weekly <= 0.50`), `Y`: variabilidad media, `Z`: alta volatilidad.",
-        "- Regla robusta: si un SKU tiene menos de 3 semanas activas se marca `LOW_HISTORY`; si el promedio semanal es 0 se marca `UNKNOWN`.",
+        "- `ABC`: importancia por `pick_lines` (no por unidades).",
+        "- `XYZ`: estabilidad/variabilidad semanal de `pick_lines`.",
+        "- El modulo escribe resultados en `outputs_abc/`.",
         "",
-        "## Filtro por propietario",
+        "## Inputs",
         "",
-        "- El pipeline genera vision `GLOBAL` y vision por propietario en los mismos CSV, usando `owner_scope`.",
-        "- El filtro por propietario afecta al calculo, no solo a la visualizacion.",
+        "- `movimientos.xlsx`",
         "",
-        "## Cobertura del analisis",
+        "## Ejecucion",
+        "",
+        "### Mac/Linux",
+        "",
+        "```bash",
+        "source .venv/bin/activate",
+        "python abc_main.py --input movimientos.xlsx --output_dir outputs_abc",
+        "```",
+        "",
+        "### Windows PowerShell",
+        "",
+        "```powershell",
+        "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass",
+        ".venv\\Scripts\\activate",
+        "python abc_main.py --input movimientos.xlsx --output_dir outputs_abc",
+        "```",
+        "",
+        "## Outputs principales",
+        "",
+        "- `abc_picking_annual.csv`",
+        "- `abc_picking_quarterly.csv`",
+        "- `abc_picking_ytd.csv`",
+        "- `abc_summary_by_period.csv`",
+        "- `abc_xyz_summary_by_period.csv`",
+        "- `abc_owner_summary.csv`",
+        "- `abc_top_changes.csv`",
+        "- `abc_for_layout_candidates.csv`",
+        "- `plots/*.png`",
+        "",
+        "## Cobertura del ultimo run",
         "",
         f"- Lineas PI validas con fecha: {stats.n_rows_after_date_filter}",
         f"- SKUs analizados: {stats.n_unique_skus}",
         f"- Owners analizados: {stats.n_unique_owners}",
         f"- Rango de fechas: {stats.min_pick_date} -> {stats.max_pick_date}",
         f"- Registros descartados por fecha invalida: {stats.n_rows_dropped_invalid_date}",
+        f"- Ultimo periodo global disponible: {latest_label}",
+        (
+            f"- Concentracion de pick_lines en clase A (ultimo periodo): {latest_a_share:.1%}"
+            if not np.isnan(latest_a_share)
+            else "- Concentracion de pick_lines en clase A (ultimo periodo): n/d"
+        ),
         "",
-        "## Interpretacion operativa de ABC-XYZ",
+        "## Conexion con el resto del proyecto",
         "",
-        "- `AX`: alta rotacion y estable. Primeras posiciones / zonas calientes muy claras.",
-        "- `AY`: alta rotacion con variabilidad media. Mantener muy accesible y monitorizar cambios.",
-        "- `AZ`: alta rotacion pero volatil. Mantener premium, con flexibilidad ante picos.",
-        "- `BX`: accesible y estable, sin consumir tanto espacio premium.",
-        "- `BZ`: rotacion media y volatil. Monitorizar antes de fijar layout definitivo.",
-        "- `CZ`: baja prioridad y alta volatilidad. Revisar espacio y evitar sobreasignacion.",
-        "",
-        f"Ultimo periodo global disponible: `{latest_label}`",
-        f"Concentracion de pick_lines en clase A: `{latest_a_share:.1%}`",
-        "",
-        "## Propietarios con mayor peso",
-        "",
-        _md_table(owner_preview),
-        "",
-        "## Candidatos de layout (GLOBAL, ultimo periodo)",
-        "",
-        _md_table(latest_layout),
-        "",
-        "## Resumen ABC-XYZ del ultimo periodo global",
-        "",
-        _md_table(xyz_latest),
-        "",
-        "## Cambios relevantes entre periodos",
-        "",
-        _md_table(biggest_moves),
-        "",
-        "## Recomendaciones operativas",
-        "",
-        "- `AX -> KEEP_FRONT_STABLE`: primeras posiciones y slotting muy estable.",
-        "- `AZ -> KEEP_FRONT_FLEX`: primeras posiciones, pero con buffer y flexibilidad para picos.",
-        "- `BZ -> MONITOR_VOLATILE`: revisar tendencia antes de inmovilizar espacio prime.",
-        "- `CZ -> REVIEW_SPACE`: baja prioridad; evaluar si ocupa ubicaciones demasiado valiosas.",
+        "- No recalcula el forecast principal de `main.py`.",
+        "- Streamlit (pagina `ABC Picking`) consume `outputs_abc/` para visualizacion.",
+        "- La web React actual no consume `outputs_abc/`.",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
     LOGGER.info("README ABC generado: %s", path)
-
 
 def _global_view(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:

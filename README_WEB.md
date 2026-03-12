@@ -1,79 +1,96 @@
-# Web Dashboard
+# README_WEB
 
-Dashboard base para transporte y almacen con modo estatico por defecto.
+## Objetivo
 
-## Stack
+Frontend web React/Vite para uso en ordenador personal (Mac / entorno libre).
 
-- React + Vite + TypeScript
-- Tailwind
-- Recharts
-- React Router
+Importante:
 
-No depende de backend para funcionar.
-Usa `HashRouter`, asi que tambien puede publicarse como estatico puro sin configurar rewrites.
+- La web **NO** recalcula modelos.
+- La web solo consume outputs ya generados por el forecast engine.
 
-## Modo corporativo
+## Prerequisitos
 
-1. `cd web`
-2. `npm install`
-3. `npm run sync:data`
-4. `npm run dev`
+- Node.js
+- npm
 
-Si en tu equipo corporativo no puedes instalar dependencias o no tienes Node, genera el build en una maquina personal y copia `web/dist/` dentro de `web/dist-demo/`.
+## Flujo recomendado (Mac/personal)
 
-## Modo personal
-
-1. `cd web`
-2. `npm install`
-3. `npm run sync:data`
-4. `npm run dev`
-
-Build de produccion:
-
-1. `npm run build`
-2. servir `web/dist/` con cualquier servidor estatico
-
-## Datos que consume
-
-Desde `web/public/data/`:
-
-- `forecast_weekly_business.csv`
-- `forecast_daily_business.csv`
-- `backtest_metrics.csv` opcional
-
-## Refresco de datos
-
-Script Windows:
-
-```powershell
-cd web
-npm run sync:data
-```
-
-Script Mac/Linux:
+Desde la raiz del repo:
 
 ```bash
 cd web
-npm run sync:data:sh
-```
-
-Los scripts copian automaticamente desde `../outputs` hacia `web/public/data`.
-
-## Lectura de negocio
-
-- Transporte: usar OUT e IN desde `forecast_weekly_business.csv` y `forecast_daily_business.csv`.
-- Almacen: usar `picking_movs_esperados_p50/p80`, que representa picking esperado por fecha de preparacion.
-- `P50`: caso base operativo.
-- `P80`: caso alto realista para tensionar capacidad.
-
-## Backend opcional
-
-Existe un backend opcional en `web/server/` con Express para servir los CSV desde `../outputs`, pero el frontend no lo necesita.
-
-Arranque opcional:
-
-```bash
-cd web/server
 npm install
-npm start
+npm run sync:data:sh
+npm run dev
 ```
+
+Antes de esto, si quieres datos actualizados, ejecuta primero el forecast engine en la raiz:
+
+```bash
+python main.py --horizon_days 60 --freq both --use_weather false
+```
+
+Que hace cada paso del frontend:
+
+- `npm install`: instala dependencias del frontend.
+- `npm run sync:data:sh`: copia CSV desde `../outputs/` hacia `web/public/data/`.
+- `npm run dev`: arranca Vite en modo desarrollo.
+
+## Script de sincronizacion de datos
+
+Scripts disponibles:
+
+- Mac/Linux: `npm run sync:data:sh`
+- Windows PowerShell: `npm run sync:data`
+
+Ambos scripts sincronizan estos archivos:
+
+- `forecast_daily_business.csv`
+- `forecast_weekly_business.csv`
+- `backtest_metrics.csv`
+
+Origen: `../outputs/`
+Destino: `web/public/data/`
+
+## Outputs que necesita la web
+
+Minimo:
+
+- `outputs/forecast_daily_business.csv`
+- `outputs/forecast_weekly_business.csv`
+
+Opcional (si quieres panel de calidad completo):
+
+- `outputs/backtest_metrics.csv`
+
+Si faltan CSV, la app usa datos mock para no romper la interfaz.
+
+## npm audit: como interpretarlo
+
+`npm audit` revisado el **2026-03-12** en este repo devuelve 2 vulnerabilidades moderadas encadenadas `vite -> esbuild`.
+La correccion automatica propuesta sube a `vite@8` (cambio mayor).
+
+Guia practica:
+
+1. Primero prueba `npm run dev` y valida que el dashboard funcione.
+2. No ejecutes `npm audit fix --force` automaticamente.
+3. Si decides actualizar Vite, hazlo de forma controlada (upgrade, prueba de `dev`, prueba de `build`, validacion funcional).
+
+Resumen: warnings de `npm audit` != fallo real inmediato del dashboard.
+
+## Build de produccion (opcional)
+
+```bash
+cd web
+npm run build
+npm run preview
+```
+
+Nota: construir la web (`build`) tampoco recalcula forecast; solo empaqueta el frontend.
+
+## Conexion con la arquitectura global
+
+- Motor de forecast: `main.py` (genera outputs).
+- Web: solo visualizacion de esos outputs.
+- Streamlit: alternativa para entorno restringido en Windows.

@@ -1,65 +1,97 @@
-# Streamlit dashboard interno
+# README_STREAMLIT
 
-Aplicacion Streamlit para visualizacion del forecast logistico y del basket analysis de picking.
+## Objetivo
 
-## Instalacion
+Frontend Streamlit para uso en ordenador de trabajo (Windows / entorno restringido).
+
+Importante:
+
+- Streamlit **NO** recalcula modelos.
+- Streamlit solo visualiza outputs ya generados por el forecast engine.
+
+## Prerequisitos
+
+- Python
+- `venv`
+- Dependencias de `requirements_streamlit.txt`
+
+## Arranque en Windows (entorno corporativo)
+
+Si ya tienes `.venv` creado:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\activate
+pip install -r requirements_streamlit.txt
+streamlit run streamlit_app/app.py
+```
+
+Si no existe `.venv` todavia:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements_streamlit.txt
-```
-
-Si ya usas el entorno del proyecto:
-
-```powershell
-.venv\Scripts\activate
-pip install -r requirements_streamlit.txt
-```
-
-## Lanzamiento
-
-```powershell
 streamlit run streamlit_app/app.py
 ```
 
-## Donde colocar los outputs
+## Regenerar datos antes de abrir Streamlit
 
-La app lee por defecto desde:
+Ejecuta primero (en raiz del repo):
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\activate
+python main.py --horizon_days 60 --freq both --use_weather false
+```
+
+Si quieres actualizar tambien modulos complementarios:
+
+```powershell
+python basket_main.py --input movimientos.xlsx --output_dir outputs_basket
+python abc_main.py --input movimientos.xlsx --output_dir outputs_abc
+```
+
+## Sin Node ni npm
+
+Este frontend funciona solo con Python + Streamlit.
+No requiere Node, npm ni Vite.
+
+## Rutas de outputs
+
+Por defecto usa:
 
 - `outputs/`
 - `outputs_basket/`
 - `outputs_abc/`
 
-Puedes cambiar esas rutas desde el modulo `Settings`.
+Puedes cambiarlas en la pagina **Settings** (`streamlit_app/pages/07_Settings.py`).
 
-## Archivos usados por modulo
+## Paginas actuales y datos que consumen
 
-### Resumen
-
-- `outputs/forecast_daily_business.csv`
-- `outputs/forecast_weekly_business.csv`
-
-### Transporte
+### 1) Resumen
 
 - `outputs/forecast_daily_business.csv`
 - `outputs/forecast_weekly_business.csv`
 
-### Picking
+### 2) Transporte
 
 - `outputs/forecast_daily_business.csv`
 - `outputs/forecast_weekly_business.csv`
-- `outputs/lead_time_summary.csv`
 
-### Calidad del modelo
+### 3) Picking
+
+- `outputs/forecast_daily_business.csv`
+- `outputs/forecast_weekly_business.csv`
+
+### 4) Calidad del modelo
 
 - `outputs/backtest_metrics.csv`
 - `outputs/model_registry.csv`
 - `outputs/join_kpis.csv`
-- `outputs/lead_time_summary.csv`
 
-### Optimizacion picking
+### 5) Optimizacion picking
 
 - `outputs_basket/transactions_summary_oper.csv`
 - `outputs_basket/transactions_summary_order.csv`
@@ -72,65 +104,30 @@ Puedes cambiar esas rutas desde el modulo `Settings`.
 - `outputs_basket/sku_clusters_oper.csv`
 - `outputs_basket/sku_clusters_order.csv`
 - `outputs_basket/order_owner_penalty.csv`
-- `outputs_basket/sku_neighbors.csv` si existe
-- `outputs_basket/plots/*` si existe
+- `outputs_basket/sku_neighbors.csv` (opcional)
+- `outputs_basket/plots/*` (opcional)
 
-### ABC Picking
+### 6) ABC Picking
 
 - `outputs_abc/abc_picking_annual.csv`
 - `outputs_abc/abc_picking_quarterly.csv`
 - `outputs_abc/abc_picking_ytd.csv`
 - `outputs_abc/abc_summary_by_period.csv`
+- `outputs_abc/abc_xyz_summary_by_period.csv`
+- `outputs_abc/abc_owner_summary.csv`
 - `outputs_abc/abc_top_changes.csv`
 - `outputs_abc/abc_for_layout_candidates.csv`
-- `outputs_abc/plots/*` si existe
+- `outputs_abc/plots/*` (opcional)
 
-## Cambio de carpeta base
+### 7) Settings
 
-Desde `Settings` puedes editar:
+- Configuracion de rutas base
+- Defaults de escenario/rango
+- Estado de disponibilidad de archivos
+- Boton de recarga de cache
 
-- ruta de `outputs`
-- ruta de `outputs_basket`
-- ruta de `outputs_abc`
-- escenario por defecto
-- rango por defecto
-- modo oscuro
+## Conexion con la arquitectura global
 
-Tambien puedes usar el boton `Recargar datos` para limpiar cache y releer disco.
-
-## Notas de entorno corporativo Windows
-
-- No necesita `npm`, `node` ni backend adicional.
-- Usa `Pathlib` y lectura local de CSV.
-- Si falta un archivo, la app no se rompe: muestra aviso y sigue cargando los modulos disponibles.
-- `rules_oper.csv` puede ser pesado; la app lo lee en chunks filtrados para evitar cargas completas cuando no haga falta.
-- Los ficheros ABC se leen preservando SKU como texto para no perder ceros a la izquierda.
-
-## Nuevo modulo: ABC Picking
-
-Sirve para apoyar decisiones de layout y slotting con una vista Pareto por SKU basada en `pick_lines`, ahora extendida a `ABC-XYZ` y filtrado real por propietario.
-
-Incluye:
-
-- KPIs de concentracion de clase A.
-- KPIs adicionales de `AX`, `% pick_lines AX` y SKUs volatiles `Z`.
-- Pareto interactivo por vista `anual`, `trimestral` o `YTD`.
-- Filtro `owner_scope` que trabaja sobre outputs recalculados por propietario.
-- Modo `ABC` o `ABC-XYZ`.
-- Scatter `mean_weekly_pick_lines` vs `cv_weekly` para separar rotacion y estabilidad.
-- Tabla exportable con `pick_lines`, `pick_qty`, `n_orders`, acumulado, `xyz_class`, `abc_xyz_class` y recomendacion.
-- Comparativa de cambios entre periodos (`A->B`, `B->A`, `AX->AZ`, etc.).
-- Vista de recomendaciones operativas desde `abc_for_layout_candidates.csv`.
-
-## Arquitectura
-
-```text
-streamlit_app/
-  app.py
-  pages/
-  components/
-  utils/
-  .streamlit/config.toml
-```
-
-La capa reusable esta separada para poder anadir nuevos modulos sin rehacer la aplicacion.
+- Motor de forecast: produce CSV en `outputs/`, `outputs_basket/`, `outputs_abc/`.
+- Streamlit: capa de visualizacion para entorno restringido.
+- Web React/Vite: alternativa para entorno libre en Mac.

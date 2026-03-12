@@ -169,142 +169,84 @@ def write_readme_basket(
     penalty_kpis: pd.DataFrame,
     location_savings: pd.DataFrame,
 ) -> None:
-    oper_agg = (
-        pairs_oper.groupby(["sku_a", "sku_b"], dropna=False)
-        .agg(count_pair=("count_pair", "sum"), lift=("lift", "max"))
-        .reset_index()
-        .sort_values(["count_pair", "lift"], ascending=[False, False])
-    )
-    oper_agg_sig = oper_agg.loc[oper_agg["count_pair"].ge(5) & oper_agg["lift"].ge(1.2)].copy()
-    order_pairs = pairs_order.loc[pairs_order["segment"].eq("ALL")].copy()
-    order_pairs_sig = order_pairs.loc[order_pairs["count_pair"].ge(5) & order_pairs["lift"].ge(1.2)].copy()
-
-    oper_pair_set = {tuple(sorted((str(r["sku_a"]), str(r["sku_b"])))) for _, r in oper_agg_sig.iterrows()}
-    order_pair_set = {tuple(sorted((str(r["sku_a"]), str(r["sku_b"])))) for _, r in order_pairs_sig.iterrows()}
-    order_only = order_pairs_sig[
-        order_pairs_sig.apply(lambda r: tuple(sorted((str(r["sku_a"]), str(r["sku_b"])))) not in oper_pair_set, axis=1)
-    ].head(10)
-    oper_only = oper_agg_sig[
-        oper_agg_sig.apply(lambda r: tuple(sorted((str(r["sku_a"]), str(r["sku_b"])))) not in order_pair_set, axis=1)
-    ].head(10)
-
-    top_oper_pairs = pairs_oper.loc[pairs_oper["count_pair"].ge(5) & pairs_oper["lift"].ge(1.2)].head(20)
-    top_oper_triples = triples_oper.loc[triples_oper["count_triple"].ge(5)].head(20)
-    cluster_summary = (
-        clusters_oper.groupby(["segment", "cluster_id"], dropna=False)
-        .agg(
-            cluster_size=("sku", "size"),
-            cluster_transaction_count=("transaction_count", "sum"),
-            sku_examples=("sku", lambda s: ", ".join(s.astype(str).head(5).tolist())),
-        )
-        .reset_index()
-        .sort_values(["cluster_transaction_count", "cluster_size"], ascending=[False, False])
-        .head(20)
-    )
+    del pairs_order
+    del triples_order
+    del clusters_oper
+    del penalty_kpis
+    del location_savings
 
     lines = [
-        "# Basket analysis para layout de picking",
+        "# README_BASKET",
         "",
-        "## Regla de negocio clave",
+        "## Objetivo del modulo",
         "",
-        "Para layout y productividad hay que usar SIEMPRE el nivel operativo `pedido x propietario`.",
-        "La PDA separa el recorrido por propietario, asi que un mismo pedido con 2 propietarios implica 2 rutas.",
+        "`basket_main.py` genera analitica de co-ocurrencia para optimizacion de picking y layout.",
         "",
-        "## Calidad y limpieza",
+        "Regla de negocio central:",
+        "",
+        "- Para layout, priorizar nivel operativo `pedido x propietario` (`oper`).",
+        "- El nivel `order` sirve como contraste.",
+        "- El modulo escribe resultados en `outputs_basket/`.",
+        "",
+        "## Inputs",
+        "",
+        "- `movimientos.xlsx`",
+        "",
+        "## Ejecucion",
+        "",
+        "### Mac/Linux",
+        "",
+        "```bash",
+        "source .venv/bin/activate",
+        "python basket_main.py --input movimientos.xlsx --output_dir outputs_basket",
+        "```",
+        "",
+        "### Windows PowerShell",
+        "",
+        "```powershell",
+        "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass",
+        ".venv\\Scripts\\activate",
+        "python basket_main.py --input movimientos.xlsx --output_dir outputs_basket",
+        "```",
+        "",
+        "## Outputs principales",
+        "",
+        "- `transactions_summary_oper.csv`",
+        "- `transactions_summary_order.csv`",
+        "- `sku_frequency_oper.csv`",
+        "- `sku_frequency_order.csv`",
+        "- `top_pairs_oper.csv`",
+        "- `top_pairs_order.csv`",
+        "- `rules_oper.csv`",
+        "- `rules_order.csv`",
+        "- `top_triples_oper.csv`",
+        "- `top_triples_order.csv`",
+        "- `sku_clusters_oper.csv`",
+        "- `sku_clusters_order.csv`",
+        "- `order_owner_penalty.csv`",
+        "- `owner_penalty_kpis.csv`",
+        "- `location_savings_oper.csv` (si hay ubicaciones validas)",
+        "- `plots/*.png`",
+        "",
+        "## Cobertura del ultimo run",
         "",
         f"- Filas raw movimientos: {load_stats.n_rows_raw}",
         f"- Filas PI: {load_stats.n_rows_pi}",
         f"- Filas PI validas: {load_stats.n_rows_valid}",
-        f"- % propietario DESCONOCIDO: {load_stats.pct_missing_owner:.2%}",
+        f"- % propietario desconocido: {load_stats.pct_missing_owner:.2%}",
         f"- % missing ubicacion: {load_stats.pct_missing_ubicacion:.2%}",
-        "- Transacciones con <2 SKUs se excluyen del basket porque no aportan co-ocurrencia.",
-        "- Transacciones > max_basket_size se tratan como outliers operativos: suelen ser olas, consolidaciones o picks atipicos y sesgan pares/trios.",
+        f"- Filas en `top_pairs_oper.csv`: {len(pairs_oper)}",
+        f"- Filas en `top_triples_oper.csv`: {len(triples_oper)}",
+        f"- Transacciones oper: {len(views['oper'].summary_all)}",
+        f"- Transacciones order: {len(views['order'].summary_all)}",
         "",
-        "## Impacto multi-propietario",
+        "## Conexion con el resto del proyecto",
         "",
-        _md_table(penalty_kpis),
-        "",
-        "## Recomendacion principal de layout",
-        "",
-        "Usar el analisis `oper` para reslotting dentro de cada propietario. El nivel `order` solo sirve como contraste y puede inducir co-ocurrencias falsas al mezclar propietarios.",
-        "",
-        "## Top 20 pares a co-localizar (oper)",
-        "",
-        _md_table(top_oper_pairs[["segment", "sku_a", "sku_b", "count_pair", "lift"]]),
-        "",
-        "## Top 20 trios a revisar juntos (oper)",
-        "",
-        _md_table(
-            top_oper_triples[["segment", "sku_1", "sku_2", "sku_3", "count_triple"]]
-            if not top_oper_triples.empty
-            else pd.DataFrame({"info": ["Sin trios frecuentes con el soporte configurado"]})
-        ),
-        "",
-        "## Top clusters / familias de picking (oper)",
-        "",
-        _md_table(
-            cluster_summary
-            if not cluster_summary.empty
-            else pd.DataFrame({"info": ["Sin clusters suficientes"]})
-        ),
-        "",
-        "## Comparativa oper vs order",
-        "",
-        "### Pares que aparecen en order pero no en oper",
-        "",
-        _md_table(
-            order_only[["sku_a", "sku_b", "count_pair", "lift"]]
-            if not order_only.empty
-            else pd.DataFrame({"info": ["Ninguno"]})
-        ),
-        "",
-        "### Pares que aparecen en oper pero no en order",
-        "",
-        _md_table(
-            oper_only[["sku_a", "sku_b", "count_pair", "lift"]]
-            if not oper_only.empty
-            else pd.DataFrame({"info": ["Ninguno"]})
-        ),
-        "",
-        "## Propuesta de accion",
-        "",
-        "- Re-slotting por propietario: agrupar primero pares y trios recurrentes del nivel oper.",
-        "- Crear familias de picking usando clusters oper para reducir cambios de pasillo y rebusca.",
-        "- No tomar decisiones de layout usando solo el nivel pedido porque mezcla propietarios y sobreestima afinidades.",
+        "- No recalcula el forecast principal de `main.py`.",
+        "- Streamlit (pagina `Optimizacion picking`) consume `outputs_basket/`.",
+        "- La web React actual no consume `outputs_basket/`.",
         "",
     ]
-
-    if not location_savings.empty:
-        lines.extend(
-            [
-                "## Heuristica de ahorro con ubicacion",
-                "",
-                "Proxy sencillo: `savings_index = aisle_gap x count_pair` usando el primer bloque numerico de ubicacion.",
-                "",
-                _md_table(location_savings.head(20)),
-                "",
-            ]
-        )
-
-    lines.extend(
-        [
-            "## Experimento recomendado",
-            "",
-            "1. Seleccionar 1-2 propietarios con mayor volumen y mayor `savings_index`.",
-            "2. Reubicar 10-20 SKUs del top de pares/trios oper.",
-            "3. Medir antes y despues: TPH, tiempo por linea, metros o pasillos recorridos y productividad por turno.",
-            "4. Revisar el efecto separado en pedidos mono-propietario y multi-propietario.",
-            "",
-            "## Archivos de salida",
-            "",
-            f"- `transactions_summary_oper.csv`: {len(views['oper'].summary_all)} transacciones oper",
-            f"- `transactions_summary_order.csv`: {len(views['order'].summary_all)} transacciones order",
-            f"- `top_pairs_oper.csv`: {len(pairs_oper)} filas",
-            f"- `top_pairs_order.csv`: {len(pairs_order)} filas",
-            f"- `top_triples_oper.csv`: {len(triples_oper)} filas",
-            f"- `top_triples_order.csv`: {len(triples_order)} filas",
-        ]
-    )
 
     path.write_text("\n".join(lines), encoding="utf-8")
     LOGGER.info("README basket generado: %s", path)
