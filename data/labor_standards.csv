@@ -1,0 +1,5 @@
+process,driver,driver_base,productivity_rate,allowance_pct,setup_hours,shift_hours,utilization_effective
+picking_out,picking_movs_esperados_p50,picking_movs_esperados,120,0.15,0.50,8,0.85
+inbound_recepcion,inbound_recepcion_cr_esperados_p50,inbound_recepcion_cr_esperados,22,0.12,0.25,8,0.85
+inbound_ubicacion,inbound_ubicacion_ep_esperados_p50,inbound_ubicacion_ep_esperados,28,0.12,0.25,8,0.85
+no_atribuible,picking_movs_no_atribuibles_p50,picking_movs_no_atribuibles,100,0.15,0.25,8,0.85

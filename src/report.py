@@ -13,14 +13,14 @@ def _is_delivery_type(value: object) -> bool:
     if value is None:
         return False
     t = str(value).strip().lower()
-    return t.startswith("entrega")
+    return t.startswith("entrega") or t == "mixto"
 
 
 def _is_pickup_type(value: object) -> bool:
     if value is None:
         return False
     t = str(value).strip().lower()
-    return t.startswith("recogida")
+    return t.startswith("recogida") or t == "mixto"
 
 
 def save_backtest_plots(metrics_df: pd.DataFrame, out_dir: Path) -> None:
@@ -30,7 +30,7 @@ def save_backtest_plots(metrics_df: pd.DataFrame, out_dir: Path) -> None:
         return
 
     summary = (
-        metrics_df.groupby(["axis", "freq", "target", "model"], dropna=False)[["wape", "smape", "mase"]]
+        metrics_df.groupby(["axis", "freq", "target", "model"], dropna=False)[["wape", "smape", "mase", "empirical_coverage_p80", "pinball_loss_p50", "pinball_loss_p80"]]
         .mean()
         .reset_index()
     )
@@ -46,6 +46,18 @@ def save_backtest_plots(metrics_df: pd.DataFrame, out_dir: Path) -> None:
         p = out_dir / f"backtest_wape_{axis}_{freq}.png"
         fig.savefig(p, dpi=140)
         plt.close(fig)
+
+        if "empirical_coverage_p80" in g.columns and g["empirical_coverage_p80"].notna().any():
+            fig_cov, ax_cov = plt.subplots(figsize=(12, 6))
+            pivot_cov = g.pivot_table(index="target", columns="model", values="empirical_coverage_p80", aggfunc="mean")
+            pivot_cov.plot(kind="bar", ax=ax_cov)
+            ax_cov.axhline(0.8, linestyle="--", color="#10b981", linewidth=1)
+            ax_cov.set_title(f"Backtest empirical coverage P80 - {axis} {freq}")
+            ax_cov.set_ylabel("Coverage")
+            ax_cov.grid(axis="y", alpha=0.3)
+            fig_cov.tight_layout()
+            fig_cov.savefig(out_dir / f"backtest_coverage_p80_{axis}_{freq}.png", dpi=140)
+            plt.close(fig_cov)
 
 
 def _plot_series(series: pd.DataFrame, title: str, out_path: Path, ylabel: str = "Prediccion") -> None:
@@ -78,6 +90,9 @@ def save_forecast_plots(forecast_df: pd.DataFrame, out_dir: Path) -> None:
         "workload_expected_from_service": [
             "picking_movs_esperados_desde_servicio_p50",
             "picking_movs_esperados_desde_servicio_p80",
+            "inbound_recepcion_pales_esperados_p50",
+            "inbound_ubicacion_cajas_esperados_p50",
+            "inbound_m3_esperados_p50",
         ],
     }
 

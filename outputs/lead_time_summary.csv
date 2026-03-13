@@ -1,5 +1,5 @@
 urgencia,tipo_servicio_final,n_services,lead_time_pre_median,lead_time_pre_p80,lead_time_pre_p95,lead_time_post_median,lead_time_post_p80,lead_time_post_p95,urgencia_norm,tipo_servicio
-DESCONOCIDA,entrega,1532,1.0,3.0,9.0,0.0,0.0,6.0,DESCONOCIDA,entrega
+DESCONOCIDA,entrega,1533,1.0,3.0,9.0,0.0,0.0,6.0,DESCONOCIDA,entrega
 DESCONOCIDA,recogida,357,0.0,2.200000000000003,19.14999999999995,1.0,5.0,15.449999999999989,DESCONOCIDA,recogida
 MUY_URGENTE,entrega,448,0.0,0.0,1.0,0.0,0.0,1.0,MUY_URGENTE,entrega
 MUY_URGENTE,recogida,9,0.5,0.8,0.95,1.0,6.800000000000001,28.999999999999986,MUY_URGENTE,recogida
@@ -7,5 +7,5 @@ NO,entrega,9923,1.0,3.0,5.0,0.0,0.0,1.0,NO,entrega
 NO,recogida,1814,0.0,1.0,3.0,1.0,2.0,6.0,NO,recogida
 SI,entrega,1537,1.0,1.0,3.0,0.0,0.0,0.0,SI,entrega
 SI,recogida,30,0.0,1.0,1.0,1.0,1.2000000000000028,3.549999999999997,SI,recogida
-ALL,entrega,13440,1.0,3.0,6.0,0.0,0.0,1.0,ALL,entrega
+ALL,entrega,13441,1.0,3.0,6.0,0.0,0.0,1.0,ALL,entrega
 ALL,recogida,2210,0.0,1.0,3.0,1.0,3.0,7.0,ALL,recogida

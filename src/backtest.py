@@ -38,6 +38,12 @@ def mase(y_true: np.ndarray, y_pred: np.ndarray, mae_naive: float) -> float:
     return float(np.mean(np.abs(y_true - y_pred)) / mae_naive)
 
 
+def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, quantile: float) -> float:
+    diff = y_true - y_pred
+    loss = np.maximum(quantile * diff, (quantile - 1.0) * diff)
+    return float(np.mean(loss)) if len(loss) else np.nan
+
+
 def _mae_seasonal_naive(train_y: pd.Series, seasonality: int = 7) -> float:
     if len(train_y) <= seasonality:
         return np.nan
@@ -80,6 +86,7 @@ def _compute_metrics_row(
     fold_end: pd.Timestamp,
     axis: str,
     freq: str,
+    quantile_eval: float | None = None,
 ) -> dict:
     row = {
         "axis": axis,
@@ -92,6 +99,9 @@ def _compute_metrics_row(
         "wape": wape(y_true, y_pred),
         "smape": smape(y_true, y_pred),
         "mase": mase(y_true, y_pred, mae_naive),
+        "empirical_coverage_p80": float(np.mean(y_true <= y_pred)) if quantile_eval == 0.8 else np.nan,
+        "pinball_loss_p50": pinball_loss(y_true, y_pred, 0.5) if quantile_eval == 0.5 else np.nan,
+        "pinball_loss_p80": pinball_loss(y_true, y_pred, 0.8) if quantile_eval == 0.8 else np.nan,
     }
 
     if len(y_true) > 0:
@@ -221,6 +231,7 @@ def run_backtest(
                         fold_end=pd.Timestamp(test_end),
                         axis=axis,
                         freq=freq,
+                        quantile_eval=0.5,
                     )
                 )
 
@@ -239,6 +250,7 @@ def run_backtest(
                     fold_end=pd.Timestamp(test_end),
                     axis=axis,
                     freq=freq,
+                    quantile_eval=0.5,
                 )
             )
 
@@ -255,6 +267,7 @@ def run_backtest(
                     fold_end=pd.Timestamp(test_end),
                     axis=axis,
                     freq=freq,
+                    quantile_eval=0.8,
                 )
             )
 

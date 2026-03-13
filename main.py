@@ -20,12 +20,20 @@ from src.io import (
     resolve_input_paths,
 )
 from src.join_assignment import assign_movements_to_services, generate_join_debug_outputs
+from src.monitoring import (
+    build_feature_policy_summary,
+    build_model_health_summary,
+    build_service_intensity_summary,
+    build_service_type_audit,
+)
 from src.predict import collect_model_paths, predict_targets_wide
 from src.report import save_backtest_plots, save_forecast_plots, save_picking_validation_plot
+from src.staffing import build_staffing_plan, load_labor_standards
 from src.targets import (
     build_service_level,
     build_service_targets,
     build_workload_targets,
+    densify_daily_calendar,
     transform_service_forecast_to_workload_expected,
 )
 from src.train import train_and_save_models
@@ -60,6 +68,7 @@ WORKLOAD_TARGETS = [
 
 COUNT_TOKENS = ["conteo", "mov", "pales", "cajas", "eventos", "skus", "unidades", "workload"]
 PHYSICAL_TOKENS = ["m3", "peso", "volumen"]
+LABOR_STANDARDS_PATH = Path("data") / "labor_standards.csv"
 
 
 def _normalize_service_type(value: object) -> str:
@@ -75,6 +84,16 @@ def _is_delivery_type(value: object) -> bool:
 
 def _is_pickup_type(value: object) -> bool:
     return _normalize_service_type(value).startswith("recogida")
+
+
+def _is_delivery_component_type(value: object) -> bool:
+    t = _normalize_service_type(value)
+    return t.startswith("entrega") or t == "mixto"
+
+
+def _is_pickup_component_type(value: object) -> bool:
+    t = _normalize_service_type(value)
+    return t.startswith("recogida") or t == "mixto"
 
 
 def parse_bool(value: str) -> bool:
@@ -216,7 +235,12 @@ def run_model_block(
         axis=axis,
         freq=freq,
         segment_cols=segment_cols,
-        config=BacktestConfig(min_train_days=120 if freq == "daily" else 26, test_days=28 if freq == "daily" else 8, step_days=28 if freq == "daily" else 4, max_folds=3),
+        config=BacktestConfig(
+            min_train_days=180 if freq == "daily" else 30,
+            test_days=28 if freq == "daily" else 8,
+            step_days=28 if freq == "daily" else 4,
+            max_folds=4,
+        ),
     )
 
     model_artifacts = train_and_save_models(
@@ -280,6 +304,7 @@ def _build_expected_alignment_backtest(
         ("picking_movs_esperados_desde_servicio_p50", "expected_picking_p50"),
         ("picking_movs_esperados_desde_servicio_p80", "expected_picking_p80"),
     ]:
+        is_p80 = pred_col.endswith("_p80")
         rows.append(
             {
                 "axis": "workload_expected_from_service",
@@ -295,9 +320,24 @@ def _build_expected_alignment_backtest(
                 "wape_peak5": np.nan,
                 "smape_peak5": np.nan,
                 "mase_peak5": np.nan,
+                "empirical_coverage_p80": (
+                    float((daily["picking_real_entrega"] <= daily[pred_col]).mean())
+                    if is_p80
+                    else np.nan
+                ),
+                "pinball_loss_p50": (
+                    float(np.mean(np.maximum(0.5 * (daily["picking_real_entrega"] - daily[pred_col]), -0.5 * (daily["picking_real_entrega"] - daily[pred_col]))))
+                    if not is_p80
+                    else np.nan
+                ),
+                "pinball_loss_p80": (
+                    float(np.mean(np.maximum(0.8 * (daily["picking_real_entrega"] - daily[pred_col]), -0.2 * (daily["picking_real_entrega"] - daily[pred_col]))))
+                    if is_p80
+                    else np.nan
+                ),
                 "coverage_empirical": (
                     float((daily["picking_real_entrega"] <= daily[pred_col]).mean())
-                    if pred_col.endswith("_p80")
+                    if is_p80
                     else np.nan
                 ),
             }
@@ -318,6 +358,7 @@ def _build_expected_alignment_backtest(
         ("picking_movs_esperados_desde_servicio_p50", "expected_picking_p50"),
         ("picking_movs_esperados_desde_servicio_p80", "expected_picking_p80"),
     ]:
+        is_p80 = pred_col.endswith("_p80")
         rows.append(
             {
                 "axis": "workload_expected_from_service",
@@ -333,9 +374,24 @@ def _build_expected_alignment_backtest(
                 "wape_peak5": np.nan,
                 "smape_peak5": np.nan,
                 "mase_peak5": np.nan,
+                "empirical_coverage_p80": (
+                    float((weekly["picking_real_entrega"] <= weekly[pred_col]).mean())
+                    if is_p80
+                    else np.nan
+                ),
+                "pinball_loss_p50": (
+                    float(np.mean(np.maximum(0.5 * (weekly["picking_real_entrega"] - weekly[pred_col]), -0.5 * (weekly["picking_real_entrega"] - weekly[pred_col]))))
+                    if not is_p80
+                    else np.nan
+                ),
+                "pinball_loss_p80": (
+                    float(np.mean(np.maximum(0.8 * (weekly["picking_real_entrega"] - weekly[pred_col]), -0.2 * (weekly["picking_real_entrega"] - weekly[pred_col]))))
+                    if is_p80
+                    else np.nan
+                ),
                 "coverage_empirical": (
                     float((weekly["picking_real_entrega"] <= weekly[pred_col]).mean())
-                    if pred_col.endswith("_p80")
+                    if is_p80
                     else np.nan
                 ),
             }
@@ -378,7 +434,7 @@ def _build_forecast_daily_business(forecast_daily: pd.DataFrame) -> pd.DataFrame
             svc_src[c] = np.nan
 
     ent = (
-        svc_src[svc_src["tipo_servicio"].map(_is_delivery_type)]
+        svc_src[svc_src["tipo_servicio"].map(_is_delivery_component_type)]
         .groupby("date", dropna=False)
         .agg(
             eventos_entrega_p50=("conteo_servicios_p50", "sum"),
@@ -395,7 +451,7 @@ def _build_forecast_daily_business(forecast_daily: pd.DataFrame) -> pd.DataFrame
         .reset_index()
     )
     rec = (
-        svc_src[svc_src["tipo_servicio"].map(_is_pickup_type)]
+        svc_src[svc_src["tipo_servicio"].map(_is_pickup_component_type)]
         .groupby("date", dropna=False)
         .agg(
             eventos_recogida_p50=("conteo_servicios_p50", "sum"),
@@ -415,7 +471,19 @@ def _build_forecast_daily_business(forecast_daily: pd.DataFrame) -> pd.DataFrame
 
     exp_cols = ["picking_movs_esperados_desde_servicio_p50", "picking_movs_esperados_desde_servicio_p80"]
     exp_src = fd[fd["axis"].eq("workload_expected_from_service")].copy()
-    for c in exp_cols:
+    inbound_cols = [
+        "inbound_recepcion_pales_esperados_p50",
+        "inbound_recepcion_pales_esperados_p80",
+        "inbound_recepcion_cr_esperados_p50",
+        "inbound_recepcion_cr_esperados_p80",
+        "inbound_ubicacion_cajas_esperados_p50",
+        "inbound_ubicacion_cajas_esperados_p80",
+        "inbound_ubicacion_ep_esperados_p50",
+        "inbound_ubicacion_ep_esperados_p80",
+        "inbound_m3_esperados_p50",
+        "inbound_m3_esperados_p80",
+    ]
+    for c in exp_cols + inbound_cols:
         if c not in exp_src.columns:
             exp_src[c] = np.nan
     exp = (
@@ -423,11 +491,34 @@ def _build_forecast_daily_business(forecast_daily: pd.DataFrame) -> pd.DataFrame
         .agg(
             picking_movs_esperados_p50=("picking_movs_esperados_desde_servicio_p50", "sum"),
             picking_movs_esperados_p80=("picking_movs_esperados_desde_servicio_p80", "sum"),
+            inbound_recepcion_pales_esperados_p50=("inbound_recepcion_pales_esperados_p50", "sum"),
+            inbound_recepcion_pales_esperados_p80=("inbound_recepcion_pales_esperados_p80", "sum"),
+            inbound_recepcion_cr_esperados_p50=("inbound_recepcion_cr_esperados_p50", "sum"),
+            inbound_recepcion_cr_esperados_p80=("inbound_recepcion_cr_esperados_p80", "sum"),
+            inbound_ubicacion_cajas_esperados_p50=("inbound_ubicacion_cajas_esperados_p50", "sum"),
+            inbound_ubicacion_cajas_esperados_p80=("inbound_ubicacion_cajas_esperados_p80", "sum"),
+            inbound_ubicacion_ep_esperados_p50=("inbound_ubicacion_ep_esperados_p50", "sum"),
+            inbound_ubicacion_ep_esperados_p80=("inbound_ubicacion_ep_esperados_p80", "sum"),
+            inbound_m3_esperados_p50=("inbound_m3_esperados_p50", "sum"),
+            inbound_m3_esperados_p80=("inbound_m3_esperados_p80", "sum"),
         )
         .reset_index()
     )
 
-    out = svc.merge(exp, on="date", how="outer").sort_values("date")
+    wl_src = fd[fd["axis"].eq("workload")].copy()
+    for c in ["picking_movs_no_atribuibles_p50", "picking_movs_no_atribuibles_p80"]:
+        if c not in wl_src.columns:
+            wl_src[c] = np.nan
+    wl = (
+        wl_src.groupby("date", dropna=False)
+        .agg(
+            picking_movs_no_atribuibles_p50=("picking_movs_no_atribuibles_p50", "sum"),
+            picking_movs_no_atribuibles_p80=("picking_movs_no_atribuibles_p80", "sum"),
+        )
+        .reset_index()
+    )
+
+    out = svc.merge(exp, on="date", how="outer").merge(wl, on="date", how="outer").sort_values("date")
     out = out.rename(columns={"date": "fecha"})
     required = [
         "fecha",
@@ -453,6 +544,18 @@ def _build_forecast_daily_business(forecast_daily: pd.DataFrame) -> pd.DataFrame
         "peso_facturable_in_p80",
         "picking_movs_esperados_p50",
         "picking_movs_esperados_p80",
+        "inbound_recepcion_pales_esperados_p50",
+        "inbound_recepcion_pales_esperados_p80",
+        "inbound_recepcion_cr_esperados_p50",
+        "inbound_recepcion_cr_esperados_p80",
+        "inbound_ubicacion_cajas_esperados_p50",
+        "inbound_ubicacion_cajas_esperados_p80",
+        "inbound_ubicacion_ep_esperados_p50",
+        "inbound_ubicacion_ep_esperados_p80",
+        "inbound_m3_esperados_p50",
+        "inbound_m3_esperados_p80",
+        "picking_movs_no_atribuibles_p50",
+        "picking_movs_no_atribuibles_p80",
     ]
     for c in required:
         if c not in out.columns:
@@ -501,7 +604,7 @@ def _build_forecast_weekly_business(
             service_src[c] = np.nan
 
     ent_w = (
-        service_src[service_src["tipo_servicio"].map(_is_delivery_type)]
+        service_src[service_src["tipo_servicio"].map(_is_delivery_component_type)]
         .groupby("date", dropna=False)
         .agg(
             eventos_entrega_semana_p50=("conteo_servicios_p50", "sum"),
@@ -518,7 +621,7 @@ def _build_forecast_weekly_business(
         .reset_index()
     )
     rec_w = (
-        service_src[service_src["tipo_servicio"].map(_is_pickup_type)]
+        service_src[service_src["tipo_servicio"].map(_is_pickup_component_type)]
         .groupby("date", dropna=False)
         .agg(
             eventos_recogida_semana_p50=("conteo_servicios_p50", "sum"),
@@ -540,7 +643,20 @@ def _build_forecast_weekly_business(
     )
 
     exp_d = fd[fd["axis"].eq("workload_expected_from_service")].copy()
-    for c in ["picking_movs_esperados_desde_servicio_p50", "picking_movs_esperados_desde_servicio_p80"]:
+    for c in [
+        "picking_movs_esperados_desde_servicio_p50",
+        "picking_movs_esperados_desde_servicio_p80",
+        "inbound_recepcion_pales_esperados_p50",
+        "inbound_recepcion_pales_esperados_p80",
+        "inbound_recepcion_cr_esperados_p50",
+        "inbound_recepcion_cr_esperados_p80",
+        "inbound_ubicacion_cajas_esperados_p50",
+        "inbound_ubicacion_cajas_esperados_p80",
+        "inbound_ubicacion_ep_esperados_p50",
+        "inbound_ubicacion_ep_esperados_p80",
+        "inbound_m3_esperados_p50",
+        "inbound_m3_esperados_p80",
+    ]:
         if c not in exp_d.columns:
             exp_d[c] = np.nan
     exp_d["week_start_date"] = exp_d["date"] - pd.to_timedelta(exp_d["date"].dt.dayofweek, unit="D")
@@ -549,6 +665,16 @@ def _build_forecast_weekly_business(
         .agg(
             picking_movs_esperados_semana_p50=("picking_movs_esperados_desde_servicio_p50", "sum"),
             picking_movs_esperados_semana_p80=("picking_movs_esperados_desde_servicio_p80", "sum"),
+            inbound_recepcion_pales_esperados_semana_p50=("inbound_recepcion_pales_esperados_p50", "sum"),
+            inbound_recepcion_pales_esperados_semana_p80=("inbound_recepcion_pales_esperados_p80", "sum"),
+            inbound_recepcion_cr_esperados_semana_p50=("inbound_recepcion_cr_esperados_p50", "sum"),
+            inbound_recepcion_cr_esperados_semana_p80=("inbound_recepcion_cr_esperados_p80", "sum"),
+            inbound_ubicacion_cajas_esperados_semana_p50=("inbound_ubicacion_cajas_esperados_p50", "sum"),
+            inbound_ubicacion_cajas_esperados_semana_p80=("inbound_ubicacion_cajas_esperados_p80", "sum"),
+            inbound_ubicacion_ep_esperados_semana_p50=("inbound_ubicacion_ep_esperados_p50", "sum"),
+            inbound_ubicacion_ep_esperados_semana_p80=("inbound_ubicacion_ep_esperados_p80", "sum"),
+            inbound_m3_esperados_semana_p50=("inbound_m3_esperados_p50", "sum"),
+            inbound_m3_esperados_semana_p80=("inbound_m3_esperados_p80", "sum"),
         )
         .reset_index()
     )
@@ -639,6 +765,16 @@ def _build_forecast_weekly_business(
         "peso_facturable_in_semana_p80",
         "picking_movs_esperados_semana_p50",
         "picking_movs_esperados_semana_p80",
+        "inbound_recepcion_pales_esperados_semana_p50",
+        "inbound_recepcion_pales_esperados_semana_p80",
+        "inbound_recepcion_cr_esperados_semana_p50",
+        "inbound_recepcion_cr_esperados_semana_p80",
+        "inbound_ubicacion_cajas_esperados_semana_p50",
+        "inbound_ubicacion_cajas_esperados_semana_p80",
+        "inbound_ubicacion_ep_esperados_semana_p50",
+        "inbound_ubicacion_ep_esperados_semana_p80",
+        "inbound_m3_esperados_semana_p50",
+        "inbound_m3_esperados_semana_p80",
         "picking_movs_reales_semana",
         "picking_movs_no_atribuibles_semana",
         "picking_movs_no_atribuibles_semana_p50",
@@ -648,6 +784,50 @@ def _build_forecast_weekly_business(
         if c not in out.columns:
             out[c] = np.nan
     return out[ordered_cols]
+
+
+def _build_workload_expected_daily(forecast_daily: pd.DataFrame) -> pd.DataFrame:
+    if forecast_daily.empty:
+        return pd.DataFrame()
+    exp = forecast_daily[forecast_daily["axis"].eq("workload_expected_from_service")].copy()
+    if exp.empty:
+        return pd.DataFrame()
+    exp["date"] = pd.to_datetime(exp["date"], errors="coerce").dt.normalize()
+    required = [
+        "date",
+        "picking_movs_esperados_desde_servicio_p50",
+        "picking_movs_esperados_desde_servicio_p80",
+        "inbound_recepcion_pales_esperados_p50",
+        "inbound_recepcion_pales_esperados_p80",
+        "inbound_recepcion_cr_esperados_p50",
+        "inbound_recepcion_cr_esperados_p80",
+        "inbound_ubicacion_cajas_esperados_p50",
+        "inbound_ubicacion_cajas_esperados_p80",
+        "inbound_ubicacion_ep_esperados_p50",
+        "inbound_ubicacion_ep_esperados_p80",
+        "inbound_m3_esperados_p50",
+        "inbound_m3_esperados_p80",
+    ]
+    for c in required:
+        if c not in exp.columns:
+            exp[c] = np.nan
+    return exp[required].rename(columns={"date": "fecha"}).sort_values("fecha").reset_index(drop=True)
+
+
+def _build_workload_expected_weekly(workload_expected_daily: pd.DataFrame) -> pd.DataFrame:
+    if workload_expected_daily.empty:
+        return pd.DataFrame()
+    df = workload_expected_daily.copy()
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce").dt.normalize()
+    df["week_start_date"] = df["fecha"] - pd.to_timedelta(df["fecha"].dt.dayofweek, unit="D")
+    agg_cols = [c for c in df.columns if c.endswith("_p50") or c.endswith("_p80")]
+    weekly = df.groupby("week_start_date", dropna=False)[agg_cols].sum().reset_index()
+    iso = weekly["week_start_date"].dt.isocalendar()
+    weekly["week_iso"] = iso.week.astype("Int64")
+    weekly["year"] = iso.year.astype("Int64")
+    weekly["week_end_date"] = weekly["week_start_date"] + pd.Timedelta(days=6)
+    ordered = ["week_iso", "year", "week_start_date", "week_end_date"] + agg_cols
+    return weekly[ordered].sort_values("week_start_date").reset_index(drop=True)
 
 
 def main() -> None:
@@ -688,6 +868,7 @@ def main() -> None:
 
     service_level = build_service_level(albaranes)
     service_hist_for_join = service_level[service_level["fecha_servicio"] <= cutoff].copy()
+    service_type_audit = build_service_type_audit(service_level)
 
     join_out = assign_movements_to_services(
         movements=movimientos,
@@ -699,6 +880,24 @@ def main() -> None:
     workload_daily, workload_weekly_initial = build_workload_targets(join_out.movements_joined)
     service_daily = service_daily.drop(columns=["mix_entrega_vs_recogida"], errors="ignore")
     service_weekly_initial = service_weekly_initial.drop(columns=["mix_entrega_vs_recogida"], errors="ignore")
+
+    service_daily = densify_daily_calendar(
+        service_daily,
+        target_cols=SERVICE_TARGETS,
+        axis="service",
+        cutoff_date=cutoff,
+        exclude_years=exclude_years,
+    )
+    workload_daily = densify_daily_calendar(
+        workload_daily,
+        target_cols=WORKLOAD_TARGETS,
+        axis="workload",
+        cutoff_date=cutoff,
+        exclude_years=exclude_years,
+    )
+    service_intensity_summary = build_service_intensity_summary(
+        service_daily[(service_daily["date"] <= cutoff) & service_daily["date"].dt.year.isin(exclude_years).eq(False)].copy()
+    )
 
     service_daily["excluded_year"] = service_daily["date"].dt.year.isin(exclude_years).astype(int)
     workload_daily["excluded_year"] = workload_daily["date"].dt.year.isin(exclude_years).astype(int)
@@ -840,15 +1039,78 @@ def main() -> None:
     forecast_weekly_business = _build_forecast_weekly_business(forecast_weekly, forecast_daily, workload_daily_hist)
     forecast_daily_business = _post_process_forecasts(forecast_daily_business)
     forecast_weekly_business = _post_process_forecasts(forecast_weekly_business)
+    transport_daily = forecast_daily_business[
+        [c for c in forecast_daily_business.columns if c == "fecha" or c.startswith(("eventos_", "m3_", "pales_", "cajas_", "peso_facturable_"))]
+    ].copy()
+    transport_weekly = forecast_weekly_business[
+        [c for c in forecast_weekly_business.columns if c in {"week_iso", "year", "week_start_date", "week_end_date"} or c.startswith(("eventos_", "m3_", "pales_", "cajas_", "peso_facturable_"))]
+    ].copy()
+    workload_expected_daily = _post_process_forecasts(_build_workload_expected_daily(forecast_daily))
+    workload_expected_weekly = _post_process_forecasts(_build_workload_expected_weekly(workload_expected_daily))
+
+    labor_standards = load_labor_standards(root / LABOR_STANDARDS_PATH)
+    staffing_daily_plan = _post_process_forecasts(
+        build_staffing_plan(
+            forecast_daily_business.rename(columns={"fecha": "date"}),
+            labor_standards,
+            date_col="date",
+        )
+    )
+    staffing_weekly_plan = _post_process_forecasts(
+        build_staffing_plan(
+            forecast_weekly_business.rename(columns={"week_start_date": "date"}),
+            labor_standards,
+            date_col="date",
+        )
+    )
+    if not staffing_daily_plan.empty:
+        staffing_daily_plan = staffing_daily_plan[
+            pd.to_datetime(staffing_daily_plan["date"], errors="coerce").dt.normalize() > cutoff
+        ].copy()
+        staffing_daily_plan = staffing_daily_plan.rename(columns={"date": "fecha"})
+    if not staffing_weekly_plan.empty:
+        next_week_start = cutoff + pd.Timedelta(days=(7 - cutoff.dayofweek) % 7)
+        if next_week_start <= cutoff:
+            next_week_start = next_week_start + pd.Timedelta(days=7)
+        staffing_weekly_plan = staffing_weekly_plan[
+            pd.to_datetime(staffing_weekly_plan["date"], errors="coerce").dt.normalize() >= next_week_start
+        ].copy()
+        staffing_weekly_plan = staffing_weekly_plan.rename(columns={"date": "week_start_date"})
+        staffing_weekly_plan = staffing_weekly_plan.merge(
+            forecast_weekly_business[["week_iso", "year", "week_start_date", "week_end_date"]].drop_duplicates(),
+            on="week_start_date",
+            how="left",
+        )
+
+    model_health_summary = build_model_health_summary(
+        backtest_df=backtest_df,
+        model_registry_df=model_paths_df,
+        join_kpis=join_out.join_kpis,
+        service_type_audit=service_type_audit,
+        latest_cutoff_date=cutoff,
+        service_hist_latest=service_daily_hist["date"].max() if not service_daily_hist.empty else pd.NaT,
+        workload_hist_latest=workload_daily_hist["date"].max() if not workload_daily_hist.empty else pd.NaT,
+    )
+    feature_policy_summary = build_feature_policy_summary()
 
     forecast_daily.to_csv(outputs_dir / "forecast_daily.csv", index=False)
     forecast_weekly.to_csv(outputs_dir / "forecast_weekly.csv", index=False)
     forecast_daily_business.to_csv(outputs_dir / "forecast_daily_business.csv", index=False)
     forecast_weekly_business.to_csv(outputs_dir / "forecast_weekly_business.csv", index=False)
+    transport_daily.to_csv(outputs_dir / "transport_forecast_daily.csv", index=False)
+    transport_weekly.to_csv(outputs_dir / "transport_forecast_weekly.csv", index=False)
+    workload_expected_daily.to_csv(outputs_dir / "workload_expected_daily.csv", index=False)
+    workload_expected_weekly.to_csv(outputs_dir / "workload_expected_weekly.csv", index=False)
+    staffing_daily_plan.to_csv(outputs_dir / "staffing_daily_plan.csv", index=False)
+    staffing_weekly_plan.to_csv(outputs_dir / "staffing_weekly_plan.csv", index=False)
     backtest_df.to_csv(outputs_dir / "backtest_metrics.csv", index=False)
     join_out.join_kpis.to_csv(outputs_dir / "join_kpis.csv", index=False)
     join_out.lead_time_summary.to_csv(outputs_dir / "lead_time_summary.csv", index=False)
     model_paths_df.to_csv(outputs_dir / "model_registry.csv", index=False)
+    model_health_summary.to_csv(outputs_dir / "model_health_summary.csv", index=False)
+    service_type_audit.to_csv(outputs_dir / "service_type_audit.csv", index=False)
+    service_intensity_summary.to_csv(outputs_dir / "service_intensity_summary.csv", index=False)
+    feature_policy_summary.to_csv(outputs_dir / "feature_policy.csv", index=False)
 
     save_backtest_plots(backtest_df, out_dir=diag_dir)
     save_forecast_plots(

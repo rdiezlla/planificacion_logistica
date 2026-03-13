@@ -32,8 +32,22 @@ class ModelArtifact:
 
 
 def build_feature_sets(df: pd.DataFrame, target_cols: list[str]) -> tuple[list[str], list[str], list[str]]:
-    ignore = set(target_cols + ["date", "is_historical", "excluded_year"])
+    ignore = set(
+        target_cols
+        + [
+            "date",
+            "is_historical",
+            "excluded_year",
+            "is_blackout",
+            "is_observed_day",
+            "had_raw_record",
+            "was_zero_filled",
+            "calendar_status",
+        ]
+    )
+    leakage_prefixes = ("movtype_",)
     feature_cols = [c for c in df.columns if c not in ignore]
+    feature_cols = [c for c in feature_cols if not any(c.startswith(prefix) for prefix in leakage_prefixes)]
 
     categorical = []
     numerical = []

@@ -42,6 +42,16 @@ def _is_pickup_type(value: object) -> bool:
     return _normalize_service_type(value).startswith("recogida")
 
 
+def _is_delivery_component(value: object) -> bool:
+    t = _normalize_service_type(value)
+    return t.startswith("entrega") or t == "mixto"
+
+
+def _is_pickup_component(value: object) -> bool:
+    t = _normalize_service_type(value)
+    return t.startswith("recogida") or t == "mixto"
+
+
 def build_service_level(albaranes_clean: pd.DataFrame) -> pd.DataFrame:
     base = albaranes_clean.copy()
     if "codigo_norm" not in base.columns and "codigo_norm_alb" in base.columns:
@@ -258,6 +268,69 @@ def build_workload_targets(movements_joined: pd.DataFrame) -> tuple[pd.DataFrame
     return daily, weekly
 
 
+def densify_daily_calendar(
+    daily_df: pd.DataFrame,
+    *,
+    target_cols: list[str],
+    axis: str,
+    cutoff_date: pd.Timestamp,
+    exclude_years: list[int],
+) -> pd.DataFrame:
+    if daily_df.empty:
+        return daily_df
+
+    df = daily_df.copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
+    df = df[df["date"].notna()].copy()
+    hist = df[df["date"] <= cutoff_date].copy()
+    future = df[df["date"] > cutoff_date].copy()
+    if hist.empty:
+        return df
+
+    date_index = pd.date_range(hist["date"].min(), cutoff_date, freq="D")
+    if axis == "service":
+        tipos = sorted(hist["tipo_servicio"].dropna().astype(str).unique().tolist())
+        calendar = pd.MultiIndex.from_product([date_index, tipos], names=["date", "tipo_servicio"]).to_frame(index=False)
+    else:
+        calendar = pd.DataFrame({"date": date_index})
+        calendar["tipo_servicio"] = "ALL"
+
+    merge_keys = ["date", "tipo_servicio"] if "tipo_servicio" in hist.columns else ["date"]
+    hist["had_raw_record"] = 1
+    dense = calendar.merge(hist, on=merge_keys, how="left")
+    dense["had_raw_record"] = dense["had_raw_record"].fillna(0).astype(int)
+    dense["is_blackout"] = dense["date"].dt.year.isin(exclude_years).astype(int)
+    dense["is_observed_day"] = dense["is_blackout"].eq(0).astype(int)
+    dense["was_zero_filled"] = ((dense["had_raw_record"].eq(0)) & dense["is_observed_day"].eq(1)).astype(int)
+    dense["calendar_status"] = np.where(
+        dense["is_blackout"].eq(1),
+        "blackout",
+        np.where(dense["had_raw_record"].eq(1), "observed", "valid_zero"),
+    )
+
+    for col in target_cols:
+        if col not in dense.columns:
+            dense[col] = np.nan
+        dense[col] = np.where(
+            dense["is_blackout"].eq(1),
+            np.nan,
+            pd.to_numeric(dense[col], errors="coerce").fillna(0.0),
+        )
+
+    if "axis" not in dense.columns:
+        dense["axis"] = axis
+    if "is_historical" not in dense.columns:
+        dense["is_historical"] = dense["is_observed_day"]
+    dense["is_historical"] = np.where(dense["is_blackout"].eq(1), 0, dense["is_historical"]).astype(int)
+
+    keep_cols = sorted(set(dense.columns) | set(future.columns))
+    out = pd.concat([dense, future], ignore_index=True, sort=False)
+    for col in keep_cols:
+        if col not in out.columns:
+            out[col] = np.nan
+    return out[keep_cols].sort_values(["date", "tipo_servicio"] if "tipo_servicio" in out.columns else ["date"]).reset_index(drop=True)
+
+
 def _quantile80(series: pd.Series) -> float:
     s = pd.to_numeric(series, errors="coerce").dropna()
     if s.empty:
@@ -274,6 +347,13 @@ def _shift_to_previous_workday(day: pd.Timestamp, holidays: set[pd.Timestamp]) -
     d = pd.Timestamp(day).normalize()
     while not is_workday_madrid(d, holidays):
         d = d - pd.Timedelta(days=1)
+    return d
+
+
+def _shift_to_next_workday(day: pd.Timestamp, holidays: set[pd.Timestamp]) -> pd.Timestamp:
+    d = pd.Timestamp(day).normalize()
+    while not is_workday_madrid(d, holidays):
+        d = d + pd.Timedelta(days=1)
     return d
 
 
@@ -736,11 +816,173 @@ def _empty_expected_from_dates(dates: pd.Series) -> pd.DataFrame:
     out["tipo_servicio"] = "ALL"
     out["picking_movs_esperados_desde_servicio_p50"] = 0.0
     out["picking_movs_esperados_desde_servicio_p80"] = 0.0
+    out["inbound_recepcion_pales_esperados_p50"] = 0.0
+    out["inbound_recepcion_pales_esperados_p80"] = 0.0
+    out["inbound_recepcion_cr_esperados_p50"] = 0.0
+    out["inbound_recepcion_cr_esperados_p80"] = 0.0
+    out["inbound_ubicacion_cajas_esperados_p50"] = 0.0
+    out["inbound_ubicacion_cajas_esperados_p80"] = 0.0
+    out["inbound_ubicacion_ep_esperados_p50"] = 0.0
+    out["inbound_ubicacion_ep_esperados_p80"] = 0.0
+    out["inbound_m3_esperados_p50"] = 0.0
+    out["inbound_m3_esperados_p80"] = 0.0
     out["ratio_method"] = "ratio_mes_dow_entrega"
+    out["inbound_method"] = "baseline_post_pickup"
     out["workload_expected_movs_p50"] = out["picking_movs_esperados_desde_servicio_p50"]
     out["workload_expected_movs_p80"] = out["picking_movs_esperados_desde_servicio_p80"]
     out["movimientos_esperados_desde_servicio_p50"] = out["picking_movs_esperados_desde_servicio_p50"]
     out["movimientos_esperados_desde_servicio_p80"] = out["picking_movs_esperados_desde_servicio_p80"]
+    return out
+
+
+def _build_inbound_service_assignment_frame(
+    join_movements: pd.DataFrame,
+    service_level_hist: pd.DataFrame,
+) -> pd.DataFrame:
+    svc = service_level_hist.copy()
+    svc = svc.drop_duplicates(subset=["service_id"]).copy()
+    svc["fecha_servicio"] = pd.to_datetime(svc["fecha_servicio"], errors="coerce").dt.normalize()
+    svc["tipo_servicio"] = svc.get("tipo_servicio_final", "desconocida").map(_normalize_service_type)
+    svc = svc[
+        svc["service_id"].notna()
+        & svc["fecha_servicio"].notna()
+        & svc["tipo_servicio"].map(_is_pickup_component)
+    ].copy()
+    if svc.empty:
+        return pd.DataFrame()
+
+    mov = join_movements.copy()
+    mov["assigned_service_id_norm"] = mov.get("assigned_service_id", pd.Series(index=mov.index, dtype="object")).astype(str)
+    mov["tipo_movimiento_norm"] = mov.get("tipo_movimiento", pd.Series(index=mov.index, dtype="object")).astype(str).str.upper().str.strip()
+    pickup_ids = set(svc["service_id"].dropna().astype(str).unique())
+    valid = mov[mov["is_assigned"].eq(1) & mov["assigned_service_id_norm"].isin(pickup_ids)].copy()
+    if valid.empty:
+        return pd.DataFrame()
+
+    movement_counts = (
+        valid.assign(
+            cr_line=valid["tipo_movimiento_norm"].eq("CR").astype(int),
+            ep_line=valid["tipo_movimiento_norm"].eq("EP").astype(int),
+        )
+        .groupby("assigned_service_id_norm", dropna=False)
+        .agg(
+            inbound_recepcion_cr_lines=("cr_line", "sum"),
+            inbound_ubicacion_ep_lines=("ep_line", "sum"),
+        )
+        .reset_index()
+        .rename(columns={"assigned_service_id_norm": "service_id_norm"})
+    )
+
+    out = svc.copy()
+    out["service_id_norm"] = out["service_id"].astype(str)
+    out = out.merge(movement_counts, on="service_id_norm", how="left")
+    out["inbound_recepcion_cr_lines"] = pd.to_numeric(out["inbound_recepcion_cr_lines"], errors="coerce").fillna(0.0)
+    out["inbound_ubicacion_ep_lines"] = pd.to_numeric(out["inbound_ubicacion_ep_lines"], errors="coerce").fillna(0.0)
+    out["month"] = out["fecha_servicio"].dt.month.astype(int)
+    out["dow"] = out["fecha_servicio"].dt.dayofweek.astype(int)
+    out["ratio_cr_por_servicio"] = out["inbound_recepcion_cr_lines"]
+    out["ratio_ep_por_servicio"] = out["inbound_ubicacion_ep_lines"]
+    return out[
+        [
+            "service_id",
+            "fecha_servicio",
+            "tipo_servicio",
+            "month",
+            "dow",
+            "ratio_cr_por_servicio",
+            "ratio_ep_por_servicio",
+        ]
+    ]
+
+
+def _build_inbound_lag_profile(join_movements: pd.DataFrame, movement_type: str) -> dict[int, float]:
+    mov = join_movements.copy()
+    mov["assigned_tipo_servicio_norm"] = mov.get("assigned_tipo_servicio", pd.Series(index=mov.index, dtype="object")).map(_normalize_service_type)
+    mov["fecha_inicio_dia"] = pd.to_datetime(mov.get("fecha_inicio_dia"), errors="coerce").dt.normalize()
+    mov["assigned_fecha_servicio"] = pd.to_datetime(mov.get("assigned_fecha_servicio"), errors="coerce").dt.normalize()
+    mov["tipo_movimiento_norm"] = mov.get("tipo_movimiento", pd.Series(index=mov.index, dtype="object")).astype(str).str.upper().str.strip()
+    mov["lag_days"] = (
+        (mov["fecha_inicio_dia"] - mov["assigned_fecha_servicio"]) / pd.Timedelta(days=1)
+    )
+    valid = mov[
+        mov["is_assigned"].eq(1)
+        & mov["assigned_tipo_servicio_norm"].map(_is_pickup_component)
+        & mov["tipo_movimiento_norm"].eq(str(movement_type).upper())
+        & mov["lag_days"].notna()
+        & mov["lag_days"].ge(0)
+    ].copy()
+    if len(valid) < 50:
+        return {1: 0.6, 2: 0.3, 3: 0.1}
+
+    valid["lag_bucket"] = valid["lag_days"].clip(upper=3).round().astype(int)
+    counts = valid["lag_bucket"].value_counts(normalize=True).sort_index()
+    profile = {int(k): float(v) for k, v in counts.items()}
+    total = float(sum(profile.values()))
+    if total <= 0:
+        return {1: 0.6, 2: 0.3, 3: 0.1}
+    return {k: v / total for k, v in profile.items()}
+
+
+def _allocate_inbound_metric(
+    service_events: pd.DataFrame,
+    *,
+    metric_col: str,
+    lag_profile: dict[int, float],
+    holidays: set[pd.Timestamp],
+) -> dict[pd.Timestamp, float]:
+    out: dict[pd.Timestamp, float] = {}
+    if service_events.empty or metric_col not in service_events.columns:
+        return out
+    for _, row in service_events.iterrows():
+        base_day = pd.Timestamp(row["date"]).normalize()
+        metric_value = float(pd.to_numeric(row.get(metric_col), errors="coerce"))
+        if not np.isfinite(metric_value) or metric_value <= 0:
+            continue
+        for lag_days, share in lag_profile.items():
+            if share <= 0:
+                continue
+            planned_day = _shift_to_next_workday(base_day + pd.Timedelta(days=int(lag_days)), holidays)
+            out[planned_day] = out.get(planned_day, 0.0) + metric_value * share
+    return out
+
+
+def _allocate_inbound_event_ratio(
+    service_events: pd.DataFrame,
+    *,
+    ratio_tables: dict[str, Any],
+    lag_profile: dict[int, float],
+    holidays: set[pd.Timestamp],
+    quantile: str,
+) -> dict[pd.Timestamp, float]:
+    out: dict[pd.Timestamp, float] = {}
+    if service_events.empty:
+        return out
+
+    events_col = "conteo_servicios_p50" if quantile == "p50" else "conteo_servicios_p80"
+    base_events_col = "conteo_servicios_p50"
+    for _, row in service_events.iterrows():
+        service_day = pd.Timestamp(row["date"]).normalize()
+        month = int(service_day.month)
+        dow = int(service_day.dayofweek)
+        ratio_p50 = _lookup_ratio(ratio_tables, month=month, dow=dow, column="ratio_p50")
+        ratio_p80 = _lookup_ratio(ratio_tables, month=month, dow=dow, column="ratio_p80")
+        events_p50 = float(pd.to_numeric(row.get(base_events_col), errors="coerce"))
+        events_q = float(pd.to_numeric(row.get(events_col), errors="coerce"))
+        if not np.isfinite(events_p50):
+            events_p50 = 0.0
+        if not np.isfinite(events_q):
+            events_q = events_p50
+        if quantile == "p80":
+            expected_total = max(ratio_p80 * events_p50, ratio_p50 * events_q, 0.0)
+        else:
+            expected_total = max(ratio_p50 * events_p50, 0.0)
+        if expected_total <= 0:
+            continue
+        for lag_days, share in lag_profile.items():
+            if share <= 0:
+                continue
+            planned_day = _shift_to_next_workday(service_day + pd.Timedelta(days=int(lag_days)), holidays)
+            out[planned_day] = out.get(planned_day, 0.0) + expected_total * share
     return out
 
 
@@ -751,16 +993,17 @@ def transform_service_forecast_to_workload_expected(
     holidays_df: pd.DataFrame,
     service_level_hist: pd.DataFrame,
 ) -> pd.DataFrame:
-    sf = service_forecast_daily.copy()
-    sf = sf[sf["axis"].eq("service")].copy()
-    sf["date"] = pd.to_datetime(sf["date"], errors="coerce").dt.normalize()
-    sf = sf[sf["date"].notna()].copy()
-    if sf.empty:
+    sf_all = service_forecast_daily.copy()
+    sf_all = sf_all[sf_all["axis"].eq("service")].copy()
+    sf_all["date"] = pd.to_datetime(sf_all["date"], errors="coerce").dt.normalize()
+    sf_all = sf_all[sf_all["date"].notna()].copy()
+    if sf_all.empty:
         return _empty_expected_from_dates(pd.Series(dtype="datetime64[ns]"))
 
-    sf["tipo_servicio"] = sf.get("tipo_servicio", "desconocida").map(_normalize_service_type)
-    sf = sf[sf["tipo_servicio"].map(_is_delivery_type)].copy()
-    if sf.empty:
+    sf_all["tipo_servicio"] = sf_all.get("tipo_servicio", "desconocida").map(_normalize_service_type)
+
+    sf = sf_all[sf_all["tipo_servicio"].map(_is_delivery_type)].copy()
+    if sf.empty and sf_all[sf_all["tipo_servicio"].map(_is_pickup_component)].empty:
         return _empty_expected_from_dates(service_forecast_daily.get("date", pd.Series(dtype="datetime64[ns]")))
 
     sf["eventos"] = pd.to_numeric(
@@ -796,9 +1039,105 @@ def transform_service_forecast_to_workload_expected(
         holidays=holidays,
     )
 
-    out = pd.DataFrame({"date": sorted(p50_by_day.keys())}) if p50_by_day else pd.DataFrame(columns=["date"])
+    sf_pickup = sf_all[sf_all["tipo_servicio"].map(_is_pickup_component)].copy()
+    inbound_assignments = _build_inbound_service_assignment_frame(join_movements, service_level_hist)
+    cr_ratio_tables = (
+        _build_ratio_tables(
+            inbound_assignments.rename(columns={"ratio_cr_por_servicio": "ratio_picking_por_servicio"})
+        )
+        if not inbound_assignments.empty
+        else {"month_dow": pd.DataFrame(), "month": pd.DataFrame(), "dow": pd.DataFrame(), "global": {"ratio_p50": 0.0, "ratio_p80": 0.0}}
+    )
+    ep_ratio_tables = (
+        _build_ratio_tables(
+            inbound_assignments.rename(columns={"ratio_ep_por_servicio": "ratio_picking_por_servicio"})
+        )
+        if not inbound_assignments.empty
+        else {"month_dow": pd.DataFrame(), "month": pd.DataFrame(), "dow": pd.DataFrame(), "global": {"ratio_p50": 0.0, "ratio_p80": 0.0}}
+    )
+    lag_profile_cr = _build_inbound_lag_profile(join_movements, "CR")
+    lag_profile_ep = _build_inbound_lag_profile(join_movements, "EP")
+    inbound_recepcion_p50 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="pales_in_p50" if "pales_in_p50" in sf_pickup.columns else "pales_in",
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+    )
+    inbound_recepcion_p80 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="pales_in_p80" if "pales_in_p80" in sf_pickup.columns else "pales_in",
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+    )
+    inbound_recepcion_cr_p50 = _allocate_inbound_event_ratio(
+        sf_pickup,
+        ratio_tables=cr_ratio_tables,
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+        quantile="p50",
+    )
+    inbound_recepcion_cr_p80 = _allocate_inbound_event_ratio(
+        sf_pickup,
+        ratio_tables=cr_ratio_tables,
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+        quantile="p80",
+    )
+    inbound_ubicacion_p50 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="cajas_in_p50" if "cajas_in_p50" in sf_pickup.columns else "cajas_in",
+        lag_profile=lag_profile_ep,
+        holidays=holidays,
+    )
+    inbound_ubicacion_p80 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="cajas_in_p80" if "cajas_in_p80" in sf_pickup.columns else "cajas_in",
+        lag_profile=lag_profile_ep,
+        holidays=holidays,
+    )
+    inbound_ubicacion_ep_p50 = _allocate_inbound_event_ratio(
+        sf_pickup,
+        ratio_tables=ep_ratio_tables,
+        lag_profile=lag_profile_ep,
+        holidays=holidays,
+        quantile="p50",
+    )
+    inbound_ubicacion_ep_p80 = _allocate_inbound_event_ratio(
+        sf_pickup,
+        ratio_tables=ep_ratio_tables,
+        lag_profile=lag_profile_ep,
+        holidays=holidays,
+        quantile="p80",
+    )
+    inbound_m3_p50 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="m3_in_p50" if "m3_in_p50" in sf_pickup.columns else "m3_in",
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+    )
+    inbound_m3_p80 = _allocate_inbound_metric(
+        sf_pickup,
+        metric_col="m3_in_p80" if "m3_in_p80" in sf_pickup.columns else "m3_in",
+        lag_profile=lag_profile_cr,
+        holidays=holidays,
+    )
+
+    all_dates = sorted(
+        set(p50_by_day.keys())
+        | set(inbound_recepcion_p50.keys())
+        | set(inbound_recepcion_p80.keys())
+        | set(inbound_recepcion_cr_p50.keys())
+        | set(inbound_recepcion_cr_p80.keys())
+        | set(inbound_ubicacion_p50.keys())
+        | set(inbound_ubicacion_p80.keys())
+        | set(inbound_ubicacion_ep_p50.keys())
+        | set(inbound_ubicacion_ep_p80.keys())
+        | set(inbound_m3_p50.keys())
+        | set(inbound_m3_p80.keys())
+    )
+    out = pd.DataFrame({"date": all_dates}) if all_dates else pd.DataFrame(columns=["date"])
     if out.empty:
-        return _empty_expected_from_dates(sf["date"])
+        return _empty_expected_from_dates(sf_all["date"])
 
     out["axis"] = "workload_expected_from_service"
     out["tipo_servicio"] = "ALL"
@@ -829,7 +1168,33 @@ def transform_service_forecast_to_workload_expected(
         out["picking_movs_esperados_desde_servicio_p80"],
         out["picking_movs_esperados_desde_servicio_p50"],
     )
+    out["inbound_recepcion_pales_esperados_p50"] = out["date"].map(inbound_recepcion_p50).fillna(0.0).clip(lower=0.0)
+    out["inbound_recepcion_pales_esperados_p80"] = np.maximum(
+        out["date"].map(inbound_recepcion_p80).fillna(0.0).clip(lower=0.0),
+        out["inbound_recepcion_pales_esperados_p50"],
+    )
+    out["inbound_recepcion_cr_esperados_p50"] = out["date"].map(inbound_recepcion_cr_p50).fillna(0.0).clip(lower=0.0)
+    out["inbound_recepcion_cr_esperados_p80"] = np.maximum(
+        out["date"].map(inbound_recepcion_cr_p80).fillna(0.0).clip(lower=0.0),
+        out["inbound_recepcion_cr_esperados_p50"],
+    )
+    out["inbound_ubicacion_cajas_esperados_p50"] = out["date"].map(inbound_ubicacion_p50).fillna(0.0).clip(lower=0.0)
+    out["inbound_ubicacion_cajas_esperados_p80"] = np.maximum(
+        out["date"].map(inbound_ubicacion_p80).fillna(0.0).clip(lower=0.0),
+        out["inbound_ubicacion_cajas_esperados_p50"],
+    )
+    out["inbound_ubicacion_ep_esperados_p50"] = out["date"].map(inbound_ubicacion_ep_p50).fillna(0.0).clip(lower=0.0)
+    out["inbound_ubicacion_ep_esperados_p80"] = np.maximum(
+        out["date"].map(inbound_ubicacion_ep_p80).fillna(0.0).clip(lower=0.0),
+        out["inbound_ubicacion_ep_esperados_p50"],
+    )
+    out["inbound_m3_esperados_p50"] = out["date"].map(inbound_m3_p50).fillna(0.0).clip(lower=0.0)
+    out["inbound_m3_esperados_p80"] = np.maximum(
+        out["date"].map(inbound_m3_p80).fillna(0.0).clip(lower=0.0),
+        out["inbound_m3_esperados_p50"],
+    )
     out["ratio_method"] = "ratio_mes_dow_entrega_residual_p80"
+    out["inbound_method"] = "pickup_post_service_cr_ep_lag_profile"
     out = out.drop(columns=["residual_p80"], errors="ignore")
 
     # Compatibilidad hacia atras.

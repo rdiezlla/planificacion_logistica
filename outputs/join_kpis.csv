@@ -1,2 +1,2 @@
 total_movimientos,mov_con_codigo,mov_asignados,coverage,n_codigos_interseccion,pct_mov_con_codigo_asignado,pct_service_id_con_mov,movimientos_con_pedido_externo,movimientos_sin_pedido_externo,movimientos_asignados,coverage_join_overall,coverage_join_con_codigo,service_ids_total,service_ids_con_movimientos,coverage_service_ids_with_mov
-278445,111994,87030,0.3125572375154878,15682,0.7770952015286533,0.9281224054086111,111994,166451,87030,0.3125572375154878,0.7770952015286533,16862,15650,0.9281224054086111
+278445,111994,87035,0.31257519438309184,15683,0.7771398467775059,0.9271370179491736,111994,166451,87035,0.31257519438309184,0.7771398467775059,16881,15651,0.9271370179491736
