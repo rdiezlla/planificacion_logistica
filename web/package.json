@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "sync:data": "powershell -ExecutionPolicy Bypass -File scripts/sync_data.ps1",
-    "sync:data:sh": "sh scripts/sync_data.sh"
+    "sync:data:sh": "sh scripts/sync_data.sh",
+    "sync:data:dist": "powershell -ExecutionPolicy Bypass -File scripts/sync_data_dist.ps1",
+    "sync:data:dist:sh": "sh scripts/sync_data_dist.sh"
   },
   "dependencies": {
     "react": "^18.3.1",

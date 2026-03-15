@@ -152,7 +152,7 @@ export function DashboardPage({ pageMode }: { pageMode: PageMode }) {
             title="Contexto de uso"
             lines={[
               { label: "Modo por defecto", value: "Static data" },
-              { label: "Origen esperado", value: "/public/data + outputs" },
+              { label: "Origen esperado", value: "/data/*.csv" },
               { label: "Frecuencia actual", value: frequency },
               { label: "Escenario", value: quantile.toUpperCase() },
               { label: "Carga total visible", value: formatCompact(kpis.reduce((acc, item) => acc + item.value, 0)) },

@@ -1,54 +1,79 @@
-# Planificacion logistica: 1 forecast engine + 2 frontends
+# Planificacion logistica
 
-Este repositorio esta organizado como una arquitectura con **un solo motor de forecast** y **dos capas de visualizacion**.
+Arquitectura objetivo del repo:
+- Un unico forecast engine.
+- Dos frontends que consumen los mismos outputs.
 
 ## Arquitectura
 
-### A) Forecast engine (fuente unica de verdad)
+### 1) Forecast engine (fuente unica de verdad)
 
+Componentes:
 - `main.py`
 - `src/`
-- `data/`
+- `basket_main.py` + `src_basket/`
+- `abc_main.py` + `src_abc/`
+
+Salidas:
 - `outputs/`
 - `outputs_basket/`
 - `outputs_abc/`
-- `basket_main.py` + `src_basket/` (analitica basket)
-- `abc_main.py` + `src_abc/` (analitica ABC)
 
 Regla clave:
+- No duplicar modelos ni logica de forecast en frontends.
 
-- El forecast y las salidas de negocio se calculan en el engine.
-- No hay pipelines duplicados.
+### 2) Frontend web React/Vite
 
-### B) Frontend web (Mac / entorno libre)
-
+Carpeta:
 - `web/`
-- Solo lee CSV ya generados en `outputs/` (sin recalcular modelos)
 
-### C) Frontend Streamlit (Windows / entorno restringido)
+Modo dev (Mac / entorno libre):
 
+```bash
+cd web
+npm install
+npm run sync:data:sh
+npm run dev
+```
+
+Modo estatico (Windows / entorno restringido, sin npm):
+
+```bash
+python -m http.server 8080 --directory web/dist
+```
+
+Abrir en navegador:
+
+```text
+http://localhost:8080
+```
+
+Refresco de datos en modo estatico:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File web/scripts/sync_data_dist.ps1
+```
+
+### 3) Frontend Streamlit
+
+Carpeta:
 - `streamlit_app/`
-- Solo lee CSV ya generados en `outputs/`, `outputs_basket/`, `outputs_abc/` (sin recalcular modelos)
 
-## Cuando usar cada frontend
+Comando:
 
-- Casa (Mac / entorno libre): usar **Web React/Vite**.
-- Trabajo (Windows / restricciones corporativas): usar **Streamlit**.
+```bash
+streamlit run streamlit_app/app.py
+```
 
-## Flujo recomendado
+## Que frontend usar
 
-1. Ejecutar el forecast engine para regenerar salidas.
-2. Abrir el frontend que corresponda a tu entorno.
+- Entorno libre/personal: Web React/Vite.
+- Entorno capado/trabajo: Web estatica (`web/dist`) o Streamlit.
 
 ## Documentacion por modulo
 
-- [README_FORECAST.md](README_FORECAST.md): pipeline principal, entradas, salidas y comandos.
-- [README_WEB.md](README_WEB.md): frontend React/Vite para entorno personal.
-- [README_STREAMLIT.md](README_STREAMLIT.md): frontend Streamlit para entorno corporativo.
-- [README_BASKET.md](README_BASKET.md): modulo basket y outputs `outputs_basket/`.
-- [README_ABC.md](README_ABC.md): modulo ABC-XYZ y outputs `outputs_abc/`.
-
-## Regla de oro del repo
-
-- **Modelos y pipeline: una sola vez en el engine**.
-- **Visualizacion: dos frontends distintos consumiendo las mismas salidas**.
+- [README_FORECAST.md](README_FORECAST.md)
+- [README_WEB.md](README_WEB.md)
+- [README_STREAMLIT.md](README_STREAMLIT.md)
+- [README_BASKET.md](README_BASKET.md)
+- [README_ABC.md](README_ABC.md)

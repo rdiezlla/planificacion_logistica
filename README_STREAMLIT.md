@@ -2,31 +2,23 @@
 
 ## Objetivo
 
-Frontend Streamlit para uso en ordenador de trabajo (Windows / entorno restringido).
+Streamlit es la alternativa de frontend para entorno capado (Windows/restringido), sin npm y sin Vite.
 
-Importante:
+Reglas:
+- No recalcula modelos.
+- Consume los mismos outputs del engine.
 
-- Streamlit **NO** recalcula modelos.
-- Streamlit solo visualiza outputs ya generados por el forecast engine.
+## Arranque rapido
 
-## Prerequisitos
+Comando principal:
 
-- Python
-- `venv`
-- Dependencias de `requirements_streamlit.txt`
-
-## Arranque en Windows (entorno corporativo)
-
-Si ya tienes `.venv` creado:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.venv\Scripts\activate
-pip install -r requirements_streamlit.txt
+```bash
 streamlit run streamlit_app/app.py
 ```
 
-Si no existe `.venv` todavia:
+## Windows (entorno corporativo)
+
+Si no existe entorno virtual:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -36,98 +28,27 @@ pip install -r requirements_streamlit.txt
 streamlit run streamlit_app/app.py
 ```
 
-## Regenerar datos antes de abrir Streamlit
-
-Ejecuta primero (en raiz del repo):
+Si `.venv` ya existe:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .venv\Scripts\activate
-python main.py --horizon_days 60 --freq both --use_weather false
+pip install -r requirements_streamlit.txt
+streamlit run streamlit_app/app.py
 ```
 
-Si quieres actualizar tambien modulos complementarios:
+## Datos que consume
 
-```powershell
-python basket_main.py --input movimientos.xlsx --output_dir outputs_basket
-python abc_main.py --input movimientos.xlsx --output_dir outputs_abc
-```
-
-## Sin Node ni npm
-
-Este frontend funciona solo con Python + Streamlit.
-No requiere Node, npm ni Vite.
-
-## Rutas de outputs
-
-Por defecto usa:
-
+Por defecto:
 - `outputs/`
 - `outputs_basket/`
 - `outputs_abc/`
 
-Puedes cambiarlas en la pagina **Settings** (`streamlit_app/pages/07_Settings.py`).
+Estas rutas se pueden ajustar desde la pagina Settings de Streamlit.
 
-## Paginas actuales y datos que consumen
+## Relacion con la arquitectura
 
-### 1) Resumen
-
-- `outputs/forecast_daily_business.csv`
-- `outputs/forecast_weekly_business.csv`
-
-### 2) Transporte
-
-- `outputs/forecast_daily_business.csv`
-- `outputs/forecast_weekly_business.csv`
-
-### 3) Picking
-
-- `outputs/forecast_daily_business.csv`
-- `outputs/forecast_weekly_business.csv`
-
-### 4) Calidad del modelo
-
-- `outputs/backtest_metrics.csv`
-- `outputs/model_registry.csv`
-- `outputs/join_kpis.csv`
-
-### 5) Optimizacion picking
-
-- `outputs_basket/transactions_summary_oper.csv`
-- `outputs_basket/transactions_summary_order.csv`
-- `outputs_basket/sku_frequency_oper.csv`
-- `outputs_basket/sku_frequency_order.csv`
-- `outputs_basket/top_pairs_oper.csv`
-- `outputs_basket/top_pairs_order.csv`
-- `outputs_basket/rules_oper.csv`
-- `outputs_basket/rules_order.csv`
-- `outputs_basket/sku_clusters_oper.csv`
-- `outputs_basket/sku_clusters_order.csv`
-- `outputs_basket/order_owner_penalty.csv`
-- `outputs_basket/sku_neighbors.csv` (opcional)
-- `outputs_basket/plots/*` (opcional)
-
-### 6) ABC Picking
-
-- `outputs_abc/abc_picking_annual.csv`
-- `outputs_abc/abc_picking_quarterly.csv`
-- `outputs_abc/abc_picking_ytd.csv`
-- `outputs_abc/abc_summary_by_period.csv`
-- `outputs_abc/abc_xyz_summary_by_period.csv`
-- `outputs_abc/abc_owner_summary.csv`
-- `outputs_abc/abc_top_changes.csv`
-- `outputs_abc/abc_for_layout_candidates.csv`
-- `outputs_abc/plots/*` (opcional)
-
-### 7) Settings
-
-- Configuracion de rutas base
-- Defaults de escenario/rango
-- Estado de disponibilidad de archivos
-- Boton de recarga de cache
-
-## Conexion con la arquitectura global
-
-- Motor de forecast: produce CSV en `outputs/`, `outputs_basket/`, `outputs_abc/`.
-- Streamlit: capa de visualizacion para entorno restringido.
-- Web React/Vite: alternativa para entorno libre en Mac.
+- Unico forecast engine: genera CSV en `outputs*`.
+- Frontend web React: opcion para entorno libre.
+- Frontend Streamlit: opcion para entorno capado.
+- Ambos frontends consumen salidas, no entrenan ni recalculan modelos.

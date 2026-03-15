@@ -14,6 +14,12 @@ import { parseCsv, toCsv } from "./csv";
 import { mockBacktestMetrics, mockDailyBusiness, mockWeeklyBusiness } from "./mocks";
 import { formatDateLabel, formatWeekLabel, parseDate } from "./format";
 
+const DATA_DIR = "/data";
+
+function csvPath(filename: string): string {
+  return `${DATA_DIR}/${filename}`;
+}
+
 function dailyValue(
   row: DailyBusinessRow,
   metric: "eventos_entrega" | "m3_out" | "pales_out" | "cajas_out" | "eventos_recogida" | "m3_in" | "pales_in" | "cajas_in" | "picking_movs_esperados",
@@ -127,9 +133,9 @@ function coerceBacktest(rows: Record<string, unknown>[]): BacktestMetricRow[] {
 
 export async function loadDashboardData(): Promise<DashboardData> {
   const [dailyResult, weeklyResult, backtestResult] = await Promise.all([
-    fetchCsv<Record<string, unknown>>("/data/forecast_daily_business.csv"),
-    fetchCsv<Record<string, unknown>>("/data/forecast_weekly_business.csv"),
-    fetchCsv<Record<string, unknown>>("/data/backtest_metrics.csv"),
+    fetchCsv<Record<string, unknown>>(csvPath("forecast_daily_business.csv")),
+    fetchCsv<Record<string, unknown>>(csvPath("forecast_weekly_business.csv")),
+    fetchCsv<Record<string, unknown>>(csvPath("backtest_metrics.csv")),
   ]);
 
   return {

@@ -12,7 +12,7 @@ export function Sidebar() {
       <div className="mb-8">
         <p className="font-serif text-2xl text-ink">Planning Hub</p>
         <p className="mt-2 text-sm text-smoke">
-          Transporte y almacen con lectura directa de `outputs`.
+          Transporte y almacen con lectura directa de CSV en `/data`.
         </p>
       </div>
 
@@ -40,8 +40,7 @@ export function Sidebar() {
       <div className="mt-auto rounded-3xl bg-gradient-to-br from-ink to-slate-700 p-4 text-white">
         <p className="text-xs uppercase tracking-[0.2em] text-white/60">Static mode</p>
         <p className="mt-2 text-sm leading-6 text-white/85">
-          Por defecto carga CSV desde `public/data`. Si faltan, entra en modo mock para no romper
-          el dashboard.
+          Carga CSV desde `/data`. Si faltan, entra en modo mock para no romper el dashboard.
         </p>
       </div>
     </aside>
