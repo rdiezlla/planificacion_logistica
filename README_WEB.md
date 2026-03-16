@@ -1,17 +1,36 @@
 # README_WEB
 
-## Objetivo
+## Frontend principal
 
-Frontend React/Vite para visualizacion del forecast sin recalcular modelos.
+La web React/Vite es el frontend unico del proyecto.
 
-Reglas:
-- No tocar ni duplicar la logica del forecast engine.
-- La web consume CSV ya generados.
-- Fuente de datos de la web: `/data/*.csv`.
+Primera pagina real: `Resumen Supervisor`.
 
-## Modo web dev (Mac / entorno libre)
+## Semantica visual del supervisor
 
-Comandos:
+Cada grafico muestra 3 lineas:
+
+1. Forecast
+2. Ano 2024
+3. Real 2026 observado
+
+KPIs superiores:
+- valor principal: forecast semana activa
+- delta principal: forecast vs 2024 comparable
+- texto secundario: real 2026 observado vs 2024 (si aplica)
+
+## Contrato de datos
+
+Fuente principal:
+- `/data/supervisor_dashboard_weekly.csv`
+
+Fuente de apoyo/filtro:
+- `/data/supervisor_dashboard_daily.csv`
+
+Fallback:
+- si faltan CSV, la app usa mocks.
+
+## Desarrollo (Mac)
 
 ```bash
 cd web
@@ -20,69 +39,58 @@ npm run sync:data:sh
 npm run dev
 ```
 
-Que hace este flujo:
-- `npm run sync:data:sh` copia desde `../outputs` hacia `web/public/data`.
-- En Vite dev, `public/data` se sirve como `/data`.
+## Build
 
-## Modo web estatico (Windows / entorno restringido)
+```bash
+cd web
+npm run build
+npm run preview
+```
 
-Objetivo: usar `web/dist` ya generado, sin npm.
-
-Pasos:
-1. Copiar la carpeta `web/dist` al equipo de trabajo.
-2. Servir estatico:
+## Runtime estatico (Windows / sin npm)
 
 ```bash
 python -m http.server 8080 --directory web/dist
 ```
 
-3. Abrir en navegador `http://localhost:8080`.
+Abrir:
+
+`http://localhost:8080`
 
 Actualizar datos sin rebuild:
-- Reemplazar CSV dentro de `web/dist/data`.
-- Script recomendado en Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File web/scripts/sync_data_dist.ps1
 ```
 
-## Scripts de sincronizacion
+## Scripts de sync
 
-Se mantienen los scripts de desarrollo:
+Desarrollo:
 - `web/scripts/sync_data.sh`
 - `web/scripts/sync_data.ps1`
 
-Nuevos scripts para runtime estatico:
+Runtime estatico:
 - `web/scripts/sync_data_dist.sh`
 - `web/scripts/sync_data_dist.ps1`
 
-Archivos sincronizados:
+CSV sincronizados:
 - `forecast_daily_business.csv`
 - `forecast_weekly_business.csv`
 - `backtest_metrics.csv`
+- `supervisor_dashboard_daily.csv`
+- `supervisor_dashboard_weekly.csv`
 
 Origen:
 - `../outputs`
 
-Destinos:
-- Dev: `web/public/data`
-- Estatico: `web/dist/data`
+Destino:
+- dev: `web/public/data`
+- estatico: `web/dist/data`
 
-## npm audit: interpretacion correcta
+## npm audit
 
-Los warnings de `npm audit` no implican automaticamente fallo operativo del dashboard.
+Warnings de `npm audit` no implican automaticamente fallo operativo.
 
-Guia:
-1. Validar primero `npm run dev` y `npm run build`.
-2. No ejecutar `npm audit fix --force` sin control.
-3. Si se actualiza Vite u otras dependencias mayores, hacerlo con pruebas funcionales.
-
-## Outputs minimos para la web
-
-- `outputs/forecast_daily_business.csv`
-- `outputs/forecast_weekly_business.csv`
-
-Opcional para calidad de modelo en el dashboard:
-- `outputs/backtest_metrics.csv`
-
-Si falta algun CSV, la app usa mocks para no romper la interfaz.
+Recomendacion:
+1. validar `npm run dev` y `npm run build`
+2. no usar `npm audit fix --force` sin validar impacto

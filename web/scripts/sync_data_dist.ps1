@@ -11,7 +11,9 @@ New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 $files = @(
   "forecast_weekly_business.csv",
   "forecast_daily_business.csv",
-  "backtest_metrics.csv"
+  "backtest_metrics.csv",
+  "supervisor_dashboard_daily.csv",
+  "supervisor_dashboard_weekly.csv"
 )
 
 foreach ($file in $files) {

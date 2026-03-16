@@ -1,33 +1,35 @@
 # Planificacion logistica
 
-Arquitectura objetivo del repo:
-- Un unico forecast engine.
-- Dos frontends que consumen los mismos outputs.
+Proyecto orientado a un flujo unico:
+
+1. Forecast engine (`main.py` + `src/`)
+2. Frontend principal web React/Vite (`web/`)
+
+La primera pagina web de supervisor se simplifica a 3 series por metrica:
+- Forecast
+- Ano 2024 (comparativo)
+- Real observado 2026
 
 ## Arquitectura
 
-### 1) Forecast engine (fuente unica de verdad)
+- Motor forecast: `main.py`, `src/`
+- Capa canonica de servicios: `data/processed/fact_services_canonical.parquet`
+- Outputs supervisor:
+  - `outputs/supervisor_dashboard_daily.csv`
+  - `outputs/supervisor_dashboard_weekly.csv`
+- Historial de snapshots:
+  - `outputs/history/supervisor_snapshots/`
+  - `outputs/forecast_snapshot_registry.csv`
+  - `outputs/supervisor_forecast_history.csv`
+- Frontend web: `web/`
 
-Componentes:
-- `main.py`
-- `src/`
-- `basket_main.py` + `src_basket/`
-- `abc_main.py` + `src_abc/`
+## Ejecutar pipeline
 
-Salidas:
-- `outputs/`
-- `outputs_basket/`
-- `outputs_abc/`
+```bash
+python main.py --horizon_days 60 --freq both --use_weather false --data_mode hybrid --operational_cutover_date 2026-03-01
+```
 
-Regla clave:
-- No duplicar modelos ni logica de forecast en frontends.
-
-### 2) Frontend web React/Vite
-
-Carpeta:
-- `web/`
-
-Modo dev (Mac / entorno libre):
+## Web en desarrollo (Mac / entorno libre)
 
 ```bash
 cd web
@@ -36,44 +38,24 @@ npm run sync:data:sh
 npm run dev
 ```
 
-Modo estatico (Windows / entorno restringido, sin npm):
+## Web estatica (Windows / entorno restringido)
 
 ```bash
 python -m http.server 8080 --directory web/dist
 ```
 
-Abrir en navegador:
+Abrir `http://localhost:8080`.
 
-```text
-http://localhost:8080
-```
-
-Refresco de datos en modo estatico:
+Refrescar CSV de `web/dist/data` sin rebuild:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File web/scripts/sync_data_dist.ps1
 ```
 
-### 3) Frontend Streamlit
-
-Carpeta:
-- `streamlit_app/`
-
-Comando:
-
-```bash
-streamlit run streamlit_app/app.py
-```
-
-## Que frontend usar
-
-- Entorno libre/personal: Web React/Vite.
-- Entorno capado/trabajo: Web estatica (`web/dist`) o Streamlit.
-
-## Documentacion por modulo
+## Documentacion
 
 - [README_FORECAST.md](README_FORECAST.md)
 - [README_WEB.md](README_WEB.md)
-- [README_STREAMLIT.md](README_STREAMLIT.md)
+- [README_SUPERVISOR_DASHBOARD.md](README_SUPERVISOR_DASHBOARD.md)
 - [README_BASKET.md](README_BASKET.md)
 - [README_ABC.md](README_ABC.md)

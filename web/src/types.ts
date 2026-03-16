@@ -114,3 +114,70 @@ export type KpiCardModel = {
   suffix?: string;
   decimals?: number;
 };
+
+export type SupervisorDailyRow = {
+  fecha: string;
+  year: number;
+  week_iso: number;
+  week_start_date: string;
+  week_end_date: string;
+  weekday: number;
+  salidas_forecast: number;
+  salidas_2024: number;
+  salidas_real_2026: number;
+  recogidas_forecast: number;
+  recogidas_2024: number;
+  recogidas_real_2026: number;
+  pick_lines_forecast: number;
+  pick_lines_2024: number;
+  pick_lines_real_2026: number;
+  cutoff_date: string;
+  forecast_snapshot_date: string;
+  year_target: number;
+  comparison_year: number;
+};
+
+export type SupervisorWeeklyRow = {
+  year: number;
+  week_iso: number;
+  week_start_date: string;
+  week_end_date: string;
+  salidas_forecast: number;
+  salidas_2024: number;
+  salidas_real_2026: number;
+  recogidas_forecast: number;
+  recogidas_2024: number;
+  recogidas_real_2026: number;
+  pick_lines_forecast: number;
+  pick_lines_2024: number;
+  pick_lines_real_2026: number;
+  cutoff_date: string;
+  forecast_snapshot_date: string;
+  year_target: number;
+  comparison_year: number;
+};
+
+export type SupervisorDataSource = "csv" | "mock";
+
+export type SupervisorDashboardData = {
+  daily: SupervisorDailyRow[];
+  weekly: SupervisorWeeklyRow[];
+  sourceDaily: SupervisorDataSource;
+  sourceWeekly: SupervisorDataSource;
+};
+
+export type SupervisorChartPoint = {
+  label: string;
+  weekKey: string;
+  week_start_date: string;
+  week_end_date: string;
+  salidasForecast: number;
+  salidas2024: number;
+  salidasReal2026: number;
+  recogidasForecast: number;
+  recogidas2024: number;
+  recogidasReal2026: number;
+  pickingForecast: number;
+  picking2024: number;
+  pickingReal2026: number;
+};

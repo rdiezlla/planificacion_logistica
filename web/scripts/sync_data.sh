@@ -9,7 +9,7 @@ TARGET_DIR="$WEB_ROOT/public/data"
 
 mkdir -p "$TARGET_DIR"
 
-for file in forecast_weekly_business.csv forecast_daily_business.csv backtest_metrics.csv; do
+for file in forecast_weekly_business.csv forecast_daily_business.csv backtest_metrics.csv supervisor_dashboard_daily.csv supervisor_dashboard_weekly.csv; do
   if [ -f "$SOURCE_DIR/$file" ]; then
     cp "$SOURCE_DIR/$file" "$TARGET_DIR/$file"
     echo "Copiado $file"

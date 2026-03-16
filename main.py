@@ -10,12 +10,14 @@ import pandas as pd
 
 from src.backtest import BacktestConfig, run_backtest
 from src.cleaning import clean_albaranes, clean_movimientos
+from src.canonical_services import CUTOVER_DATE, build_canonical_layer
 from src.feature_engineering import add_time_features, parse_exclude_years
 from src.geo_normalization import normalize_provincia_destino
 from src.io import (
     load_albaranes,
     load_holidays,
     load_movimientos,
+    load_operational_orders,
     load_provincia_station_map,
     resolve_input_paths,
 )
@@ -29,8 +31,11 @@ from src.monitoring import (
 from src.predict import collect_model_paths, predict_targets_wide
 from src.report import save_backtest_plots, save_forecast_plots, save_picking_validation_plot
 from src.staffing import build_staffing_plan, load_labor_standards
+from src.supervisor_dashboard import (
+    build_supervisor_dashboard_daily,
+    build_supervisor_dashboard_weekly,
+)
 from src.targets import (
-    build_service_level,
     build_service_targets,
     build_workload_targets,
     densify_daily_calendar,
@@ -109,6 +114,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug_join", type=str, default="false")
     parser.add_argument("--exclude_years", type=str, default="2025")
     parser.add_argument("--cutoff_date", type=str, default=None)
+    parser.add_argument(
+        "--data_mode",
+        type=str,
+        default="hybrid",
+        choices=["legacy", "hybrid", "operational-first"],
+    )
+    parser.add_argument(
+        "--operational_cutover_date",
+        type=str,
+        default=str(CUTOVER_DATE.date()),
+        help="Fecha de cutover para priorizar operativo (YYYY-MM-DD).",
+    )
     return parser.parse_args()
 
 
@@ -830,29 +847,172 @@ def _build_workload_expected_weekly(workload_expected_daily: pd.DataFrame) -> pd
     return weekly[ordered].sort_values("week_start_date").reset_index(drop=True)
 
 
+def _update_forecast_snapshot_registry(
+    *,
+    outputs_dir: Path,
+    snapshot_date: str,
+    cutoff_date: str,
+    file_name: str,
+    rows: int,
+    created_ts: str,
+) -> None:
+    registry_path = outputs_dir / "forecast_snapshot_registry.csv"
+    new_row = pd.DataFrame(
+        [
+            {
+                "snapshot_date": snapshot_date,
+                "cutoff_date": cutoff_date,
+                "file_name": file_name,
+                "rows": int(rows),
+                "created_ts": created_ts,
+            }
+        ]
+    )
+    if registry_path.exists():
+        registry = pd.read_csv(registry_path)
+        registry = pd.concat([registry, new_row], ignore_index=True)
+    else:
+        registry = new_row
+    registry = registry.drop_duplicates(subset=["snapshot_date", "file_name"], keep="last")
+    registry = registry.sort_values(["snapshot_date", "file_name"]).reset_index(drop=True)
+    registry.to_csv(registry_path, index=False)
+
+
+def _update_supervisor_forecast_history(
+    *,
+    outputs_dir: Path,
+    snapshot_date: str,
+    supervisor_daily: pd.DataFrame,
+    supervisor_weekly: pd.DataFrame,
+) -> None:
+    history_path = outputs_dir / "supervisor_forecast_history.csv"
+    frames: list[pd.DataFrame] = []
+
+    metric_map = {
+        "salidas": "salidas_forecast",
+        "recogidas": "recogidas_forecast",
+        "pick_lines": "pick_lines_forecast",
+    }
+
+    if not supervisor_daily.empty:
+        d = supervisor_daily.copy()
+        for metric, col in metric_map.items():
+            if col not in d.columns:
+                continue
+            part = pd.DataFrame(
+                {
+                    "snapshot_date": snapshot_date,
+                    "grain": "daily",
+                    "metric": metric,
+                    "fecha": d["fecha"],
+                    "week_iso": "",
+                    "forecast_value": pd.to_numeric(d[col], errors="coerce").fillna(0.0),
+                }
+            )
+            frames.append(part)
+
+    if not supervisor_weekly.empty:
+        w = supervisor_weekly.copy()
+        for metric, col in metric_map.items():
+            if col not in w.columns:
+                continue
+            part = pd.DataFrame(
+                {
+                    "snapshot_date": snapshot_date,
+                    "grain": "weekly",
+                    "metric": metric,
+                    "fecha": "",
+                    "week_iso": pd.to_numeric(w["week_iso"], errors="coerce"),
+                    "forecast_value": pd.to_numeric(w[col], errors="coerce").fillna(0.0),
+                }
+            )
+            frames.append(part)
+
+    if not frames:
+        return
+
+    new_history = pd.concat(frames, ignore_index=True)
+    if history_path.exists():
+        history = pd.read_csv(history_path)
+        history = pd.concat([history, new_history], ignore_index=True)
+    else:
+        history = new_history
+    history = history.drop_duplicates(subset=["snapshot_date", "grain", "metric", "fecha", "week_iso"], keep="last")
+    history = history.sort_values(["snapshot_date", "grain", "metric", "fecha", "week_iso"]).reset_index(drop=True)
+    history.to_csv(history_path, index=False)
+
+
+def _save_supervisor_snapshots(
+    *,
+    outputs_dir: Path,
+    cutoff: pd.Timestamp,
+    supervisor_daily: pd.DataFrame,
+    supervisor_weekly: pd.DataFrame,
+) -> None:
+    snapshot_date = pd.Timestamp.today().normalize().strftime("%Y-%m-%d")
+    created_ts = pd.Timestamp.utcnow().tz_localize(None).strftime("%Y-%m-%d %H:%M:%S")
+    cutoff_date = pd.Timestamp(cutoff).normalize().strftime("%Y-%m-%d")
+
+    snapshots_dir = outputs_dir / "history" / "supervisor_snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+    files = [
+        ("supervisor_dashboard_daily", supervisor_daily),
+        ("supervisor_dashboard_weekly", supervisor_weekly),
+    ]
+    for base_name, frame in files:
+        file_name = f"{base_name}__{snapshot_date}.csv"
+        snapshot_path = snapshots_dir / file_name
+        frame.to_csv(snapshot_path, index=False)
+        _update_forecast_snapshot_registry(
+            outputs_dir=outputs_dir,
+            snapshot_date=snapshot_date,
+            cutoff_date=cutoff_date,
+            file_name=file_name,
+            rows=len(frame),
+            created_ts=created_ts,
+        )
+
+    _update_supervisor_forecast_history(
+        outputs_dir=outputs_dir,
+        snapshot_date=snapshot_date,
+        supervisor_daily=supervisor_daily,
+        supervisor_weekly=supervisor_weekly,
+    )
+
+
 def main() -> None:
     _setup_logging()
     args = parse_args()
 
     root = Path(".").resolve()
     outputs_dir = root / "outputs"
+    processed_dir = root / "data" / "processed"
     diag_dir = outputs_dir / "diagnostics"
     models_dir = root / "models"
     outputs_dir.mkdir(exist_ok=True)
+    processed_dir.mkdir(exist_ok=True, parents=True)
     diag_dir.mkdir(exist_ok=True, parents=True)
     models_dir.mkdir(exist_ok=True)
 
     cutoff = pd.Timestamp(args.cutoff_date).normalize() if args.cutoff_date else pd.Timestamp.today().normalize()
+    operational_cutover = pd.Timestamp(args.operational_cutover_date).normalize()
     use_weather = parse_bool(args.use_weather)
     debug_join = parse_bool(args.debug_join)
     exclude_years = parse_exclude_years(args.exclude_years)
 
     LOGGER.info("Cutoff date: %s", cutoff.date())
+    LOGGER.info("Data mode: %s", args.data_mode)
+    LOGGER.info("Operational cutover date: %s", operational_cutover.date())
     LOGGER.info("Exclude years train/scoring: %s", exclude_years)
 
     paths = resolve_input_paths(root)
     raw_alb = load_albaranes(paths.albaranes)
     raw_mov = load_movimientos(paths.movimientos)
+    raw_operational = (
+        load_operational_orders(paths.operational_orders)
+        if paths.operational_orders is not None
+        else pd.DataFrame()
+    )
     holidays_df = load_holidays(paths.holidays)
     prov_station_map = load_provincia_station_map(paths.provincia_station_map)
 
@@ -865,8 +1025,27 @@ def main() -> None:
         return
 
     albaranes["provincia_norm"] = normalize_provincia_destino(albaranes["provincia_destino"], prov_station_map)
+    canonical_layer = build_canonical_layer(
+        albaranes_clean=albaranes,
+        operational_raw=raw_operational,
+        selection_mode=args.data_mode,
+        cutoff=cutoff,
+        cutover_date=operational_cutover,
+    )
+    canonical_layer.stg_services_legacy.to_parquet(processed_dir / "stg_services_legacy.parquet", index=False)
+    canonical_layer.stg_services_operational.to_parquet(
+        processed_dir / "stg_services_operational.parquet", index=False
+    )
+    canonical_layer.fact_services_canonical.to_parquet(
+        processed_dir / "fact_services_canonical.parquet", index=False
+    )
 
-    service_level = build_service_level(albaranes)
+    service_level = canonical_layer.pipeline_services.copy()
+    if service_level.empty:
+        raise ValueError(
+            "La capa canonica no genero servicios activos para el pipeline. "
+            "Revisa fuentes legacy/operational y reglas de deduplicacion."
+        )
     service_hist_for_join = service_level[service_level["fecha_servicio"] <= cutoff].copy()
     service_type_audit = build_service_type_audit(service_level)
 
@@ -1047,6 +1226,15 @@ def main() -> None:
     ].copy()
     workload_expected_daily = _post_process_forecasts(_build_workload_expected_daily(forecast_daily))
     workload_expected_weekly = _post_process_forecasts(_build_workload_expected_weekly(workload_expected_daily))
+    supervisor_dashboard_daily = build_supervisor_dashboard_daily(
+        forecast_daily_business=forecast_daily_business,
+        service_daily=service_daily,
+        workload_daily=workload_daily,
+        canonical_services=canonical_layer.fact_services_canonical,
+        cutoff=cutoff,
+        cutover_date=operational_cutover,
+    )
+    supervisor_dashboard_weekly = build_supervisor_dashboard_weekly(supervisor_dashboard_daily)
 
     labor_standards = load_labor_standards(root / LABOR_STANDARDS_PATH)
     staffing_daily_plan = _post_process_forecasts(
@@ -1101,11 +1289,20 @@ def main() -> None:
     transport_weekly.to_csv(outputs_dir / "transport_forecast_weekly.csv", index=False)
     workload_expected_daily.to_csv(outputs_dir / "workload_expected_daily.csv", index=False)
     workload_expected_weekly.to_csv(outputs_dir / "workload_expected_weekly.csv", index=False)
+    supervisor_dashboard_daily.to_csv(outputs_dir / "supervisor_dashboard_daily.csv", index=False)
+    supervisor_dashboard_weekly.to_csv(outputs_dir / "supervisor_dashboard_weekly.csv", index=False)
+    _save_supervisor_snapshots(
+        outputs_dir=outputs_dir,
+        cutoff=cutoff,
+        supervisor_daily=supervisor_dashboard_daily,
+        supervisor_weekly=supervisor_dashboard_weekly,
+    )
     staffing_daily_plan.to_csv(outputs_dir / "staffing_daily_plan.csv", index=False)
     staffing_weekly_plan.to_csv(outputs_dir / "staffing_weekly_plan.csv", index=False)
     backtest_df.to_csv(outputs_dir / "backtest_metrics.csv", index=False)
     join_out.join_kpis.to_csv(outputs_dir / "join_kpis.csv", index=False)
     join_out.lead_time_summary.to_csv(outputs_dir / "lead_time_summary.csv", index=False)
+    canonical_layer.source_audit.to_csv(outputs_dir / "pedidos_source_audit.csv", index=False)
     model_paths_df.to_csv(outputs_dir / "model_registry.csv", index=False)
     model_health_summary.to_csv(outputs_dir / "model_health_summary.csv", index=False)
     service_type_audit.to_csv(outputs_dir / "service_type_audit.csv", index=False)

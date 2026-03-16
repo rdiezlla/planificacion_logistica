@@ -17,13 +17,29 @@ class InputPaths:
     movimientos: Path
     holidays: Path
     provincia_station_map: Path
+    operational_orders: Path | None
 
 
-REQUIRED_INPUTS = {
-    "albaranes": "Informacion_albaranaes.xlsx",
-    "movimientos": "movimientos.xlsx",
-    "holidays": "data/holidays_madrid.csv",
-    "provincia_station_map": "data/provincia_station_map.csv",
+INPUT_CANDIDATES: dict[str, list[str]] = {
+    "albaranes": [
+        "data/raw/legacy/Informacion_albaranaes.xlsx",
+        "Informacion_albaranaes.xlsx",
+        "planificacion/Datos/Informacion_albaranaes.xlsx",
+    ],
+    "movimientos": [
+        "data/raw/movimientos/movimientos.xlsx",
+        "movimientos.xlsx",
+        "planificacion/Datos/movimientos.xlsx",
+    ],
+    "holidays": ["data/holidays_madrid.csv"],
+    "provincia_station_map": ["data/provincia_station_map.csv"],
+}
+
+OPTIONAL_INPUT_CANDIDATES: dict[str, list[str]] = {
+    "operational_orders": [
+        "data/raw/operational/lineas_solicitudes_con_pedidos.xlsx",
+        "lineas_solicitudes_con_pedidos.xlsx",
+    ]
 }
 
 
@@ -90,9 +106,54 @@ MOVIMIENTOS_ALIASES = _build_alias_map(
     }
 )
 
+OPERATIONAL_ALIASES = _build_alias_map(
+    {
+        "id": ["id"],
+        "solicitud": ["solicitud"],
+        "inicio_evento": ["inicio evento", "inicio_evento"],
+        "creacion_solicitud": ["creación solicitud", "creacion solicitud", "creacion_solicitud"],
+        "borrado_solicitud": ["borrado solicitud", "borrado_solicitud"],
+        "pedido": ["pedido"],
+        "articulo": ["articulo", "artículo"],
+        "propietario": ["propietario"],
+        "departamento": ["departamento"],
+        "estado_linea": ["estado línea", "estado linea", "estado_linea"],
+        "cant_solicitada": ["cant. solicitada", "cant_solicitada"],
+        "cant_confirmada": ["cant. confirmada", "cant_confirmada"],
+        "cant_almacenada": ["cant. almacenada", "cant_almacenada"],
+        "modificacion_linea": ["modificación línea", "modificacion linea", "modificacion_linea"],
+        "fin_evento": ["fin evento", "fin_evento"],
+        "reservation_start_date": ["reservation_start_date"],
+        "reservation_finish_date": ["reservation_finish_date"],
+        "borrado_linea": ["borrado línea", "borrado linea", "borrado_linea"],
+        "alta_baja": ["alta/baja", "alta_baja"],
+        "comentarios": ["comentarios"],
+        "propietario_solicitante": ["propietario solicitante", "propietario_solicitante"],
+        "departamento_solicitante": ["departamento solicitante", "departamento_solicitante"],
+        "peticionario": ["peticionario"],
+        "estado": ["estado"],
+        "creacion_pedido": ["creación pedido", "creacion pedido", "creacion_pedido"],
+        "ultima_modificacion": ["última modificación", "ultima modificacion", "ultima_modificacion"],
+        "nombre": ["nombre"],
+        "apellidos": ["apellidos"],
+        "telefono": ["telefono", "teléfono"],
+        "localizacion": ["localización", "localizacion"],
+        "ubicacion": ["ubicación", "ubicacion"],
+        "provincia": ["provincia"],
+        "codigo_generico": ["codigo generico", "codigo_generico"],
+    }
+)
+
 
 def apply_header_standardization(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
-    alias_map = ALBARANES_ALIASES if dataset == "albaranes" else MOVIMIENTOS_ALIASES
+    if dataset == "albaranes":
+        alias_map = ALBARANES_ALIASES
+    elif dataset == "movimientos":
+        alias_map = MOVIMIENTOS_ALIASES
+    elif dataset == "operational_orders":
+        alias_map = OPERATIONAL_ALIASES
+    else:
+        raise ValueError(f"Dataset no soportado para normalizacion de cabeceras: {dataset}")
     normalized_headers = [normalize_header_name(c) for c in df.columns]
     canonical_headers = [alias_map.get(h, h) for h in normalized_headers]
 
@@ -111,23 +172,43 @@ def apply_header_standardization(df: pd.DataFrame, dataset: str) -> pd.DataFrame
     return out
 
 
-def resolve_input_paths(root: Path) -> InputPaths:
-    paths = {}
-    missing = []
-    for key, rel in REQUIRED_INPUTS.items():
+def _resolve_candidate_path(root: Path, candidates: list[str]) -> Path | None:
+    for rel in candidates:
         p = root / rel
+        if p.exists():
+            return p
+    return None
+
+
+def resolve_input_paths(root: Path) -> InputPaths:
+    paths: dict[str, Path] = {}
+    missing = []
+    for key, candidates in INPUT_CANDIDATES.items():
+        p = _resolve_candidate_path(root, candidates)
+        if p is None:
+            missing.append(f"{key}: " + " | ".join(str(root / c) for c in candidates))
+            continue
         paths[key] = p
-        if not p.exists():
-            missing.append(str(p))
     if missing:
         raise FileNotFoundError(
             "Faltan ficheros de entrada obligatorios:\n- " + "\n- ".join(missing)
         )
+
+    operational = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["operational_orders"]
+    )
+    if operational is None:
+        LOGGER.warning(
+            "No se detecto fuente operativa de pedidos (lineas_solicitudes_con_pedidos.xlsx). "
+            "Se mantiene modo legacy/hibrido con fallback."
+        )
+
     return InputPaths(
         albaranes=paths["albaranes"],
         movimientos=paths["movimientos"],
         holidays=paths["holidays"],
         provincia_station_map=paths["provincia_station_map"],
+        operational_orders=operational,
     )
 
 
@@ -141,6 +222,12 @@ def load_movimientos(path: Path) -> pd.DataFrame:
     LOGGER.info("Cargando movimientos: %s", path)
     df = pd.read_excel(path)
     return apply_header_standardization(df, dataset="movimientos")
+
+
+def load_operational_orders(path: Path) -> pd.DataFrame:
+    LOGGER.info("Cargando pedidos operativos: %s", path)
+    df = pd.read_excel(path)
+    return apply_header_standardization(df, dataset="operational_orders")
 
 
 def load_holidays(path: Path) -> pd.DataFrame:
