@@ -1,3 +1,4 @@
 feature_pattern,status,reason
 movtype_*,excluded_for_workload_training,Leakage: derivado de movimientos reales del propio dia objetivo y no disponible ex ante.
+temp_media_weighted* / precip_weighted* / viento_weighted* / weather_*,excluded_for_training,Decision de negocio: el forecast opera siempre sin meteo para evitar dependencia externa y train-serving skew.
 had_raw_record / was_zero_filled / calendar_status,excluded_for_training,"Flags de trazabilidad del calendario, utiles para diagnostico pero no para scoring ex ante."

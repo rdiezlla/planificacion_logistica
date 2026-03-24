@@ -8,12 +8,12 @@ Regla de negocio central:
 
 - Para layout, priorizar nivel operativo `pedido x propietario` (`oper`).
 - El nivel `order` sirve como contraste.
-
-Este modulo forma parte del motor analitico y escribe resultados en `outputs_basket/`.
+- El modulo escribe resultados en `outputs_basket/`.
 
 ## Inputs
 
-- `movimientos.xlsx` (raiz del repo)
+- Por defecto se usa `movimientos.xlsx` resuelto automaticamente desde OneDrive `Descargas BI`.
+- El flujo crudo asociado vive en `Descargas BI/Movimientos/` y `Descargas BI/Movimientos pedidos/`.
 
 ## Ejecucion
 
@@ -21,7 +21,7 @@ Este modulo forma parte del motor analitico y escribe resultados en `outputs_bas
 
 ```bash
 source .venv/bin/activate
-python basket_main.py --input movimientos.xlsx --output_dir outputs_basket
+python basket_main.py --output_dir outputs_basket
 ```
 
 ### Windows PowerShell
@@ -29,12 +29,10 @@ python basket_main.py --input movimientos.xlsx --output_dir outputs_basket
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .venv\Scripts\activate
-python basket_main.py --input movimientos.xlsx --output_dir outputs_basket
+python basket_main.py --output_dir outputs_basket
 ```
 
 ## Outputs principales
-
-En `outputs_basket/`:
 
 - `transactions_summary_oper.csv`
 - `transactions_summary_order.csv`
@@ -53,12 +51,20 @@ En `outputs_basket/`:
 - `location_savings_oper.csv` (si hay ubicaciones validas)
 - `plots/*.png`
 
+## Cobertura del ultimo run
+
+- Filas raw movimientos: 278445
+- Filas PI: 65204
+- Filas PI validas: 65189
+- % propietario desconocido: 0.00%
+- % missing ubicacion: 0.42%
+- Filas en `top_pairs_oper.csv`: 113622
+- Filas en `top_triples_oper.csv`: 576784
+- Transacciones oper: 21201
+- Transacciones order: 17638
+
 ## Conexion con el resto del proyecto
 
-- No recalcula forecast de `main.py`; es un modulo complementario.
-- Streamlit (pagina `Optimizacion picking`) consume estos CSV.
+- No recalcula el forecast principal de `main.py`.
+- Streamlit (pagina `Optimizacion picking`) consume `outputs_basket/`.
 - La web React actual no consume `outputs_basket/`.
-
-## Nota operativa
-
-Si faltan algunos CSV opcionales (por ejemplo `sku_neighbors.csv`), Streamlit muestra aviso y sigue funcionando.

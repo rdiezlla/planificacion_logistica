@@ -1,3 +1,7 @@
 snapshot_date,cutoff_date,file_name,rows,created_ts
 2026-03-16,2026-03-16,supervisor_dashboard_daily__2026-03-16.csv,131,2026-03-16 19:44:07
 2026-03-16,2026-03-16,supervisor_dashboard_weekly__2026-03-16.csv,21,2026-03-16 19:44:07
+2026-03-17,2026-03-17,supervisor_dashboard_daily__2026-03-17.csv,138,2026-03-17 15:16:24
+2026-03-17,2026-03-17,supervisor_dashboard_weekly__2026-03-17.csv,21,2026-03-17 15:16:24
+2026-03-18,2026-03-18,supervisor_dashboard_daily__2026-03-18.csv,140,2026-03-18 11:55:55
+2026-03-18,2026-03-18,supervisor_dashboard_weekly__2026-03-18.csv,21,2026-03-18 11:55:55

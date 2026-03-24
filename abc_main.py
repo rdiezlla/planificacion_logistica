@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.io import resolve_movimientos_input_path
 from src_abc.abc_compare import build_layout_candidates, build_top_changes
 from src_abc.abc_core import (
     AbcThresholds,
@@ -24,10 +25,12 @@ from src_abc.report import generate_abc_plots, write_readme_abc
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Analisis Pareto / ABC de picking")
-    parser.add_argument("--input", default="movimientos.xlsx", help="Ruta al Excel de movimientos")
+    parser.add_argument("--input", default=None, help="Ruta al Excel de movimientos; por defecto se prioriza OneDrive")
     parser.add_argument("--output_dir", default="outputs_abc", help="Carpeta de salida")
     parser.add_argument("--a-threshold", type=float, default=0.80, dest="a_threshold", help="Umbral acumulado para clase A")
     parser.add_argument("--b-threshold", type=float, default=0.95, dest="b_threshold", help="Umbral acumulado para clase B")
+    parser.add_argument("--min-pick-lines-a", type=int, default=5, dest="min_pick_lines_a", help="Suelo minimo de pick_lines para mantener clase A operativa")
+    parser.add_argument("--min-pick-lines-b", type=int, default=2, dest="min_pick_lines_b", help="Suelo minimo de pick_lines para mantener clase B operativa")
     parser.add_argument("--xyz-x-threshold", type=float, default=0.50, dest="xyz_x_threshold", help="Umbral de estabilidad X sobre cv semanal")
     parser.add_argument("--xyz-y-threshold", type=float, default=1.00, dest="xyz_y_threshold", help="Umbral de estabilidad Y sobre cv semanal")
     parser.add_argument("--max_owners", type=int, default=10, help="Numero maximo de propietarios especificos a incluir, ademas de GLOBAL")
@@ -52,13 +55,18 @@ def main() -> int:
     setup_logging(args.log_level)
     logger = logging.getLogger("abc_main")
 
-    input_path = Path(args.input)
+    input_path = resolve_movimientos_input_path(Path(".").resolve(), args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "plots").mkdir(parents=True, exist_ok=True)
 
     logger.info("Iniciando analisis ABC picking | input=%s | output=%s", input_path, output_dir)
-    abc_thresholds = AbcThresholds(a_threshold=args.a_threshold, b_threshold=args.b_threshold)
+    abc_thresholds = AbcThresholds(
+        a_threshold=args.a_threshold,
+        b_threshold=args.b_threshold,
+        min_pick_lines_a=args.min_pick_lines_a,
+        min_pick_lines_b=args.min_pick_lines_b,
+    )
     xyz_thresholds = XyzThresholds(x_threshold=args.xyz_x_threshold, y_threshold=args.xyz_y_threshold)
     lines, stats = load_abc_picking_lines(input_path)
     owner_scopes = determine_owner_scopes(lines, max_owners=args.max_owners)

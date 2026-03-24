@@ -26,8 +26,14 @@ La primera pagina web de supervisor se simplifica a 3 series por metrica:
 ## Ejecutar pipeline
 
 ```bash
-python main.py --horizon_days 60 --freq both --use_weather false --data_mode hybrid --operational_cutover_date 2026-03-01
+python main.py --horizon_days 60 --freq both --data_mode hybrid --operational_cutover_date 2026-03-01
+python run_daily_pipeline.py
 ```
+
+Nota:
+
+- El forecast ya no utiliza meteo.
+- Las fuentes de OneDrive se resuelven priorizando `pruebas/Descargas BI/`.
 
 ## Web en desarrollo (Mac / entorno libre)
 
@@ -55,6 +61,7 @@ powershell -ExecutionPolicy Bypass -File web/scripts/sync_data_dist.ps1
 ## Documentacion
 
 - [README_FORECAST.md](README_FORECAST.md)
+- [README_WORKFLOW.md](README_WORKFLOW.md)
 - [README_WEB.md](README_WEB.md)
 - [README_SUPERVISOR_DASHBOARD.md](README_SUPERVISOR_DASHBOARD.md)
 - [README_BASKET.md](README_BASKET.md)

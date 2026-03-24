@@ -1,8 +1,12 @@
-# README_FORECAST
+﻿# README_FORECAST
 
 ## Objetivo actual
 
 Mantener el motor de forecast estable y simplificar la capa visible del dashboard supervisor.
+
+Regla vigente:
+
+- El forecast opera siempre sin meteo.
 
 La vista supervisor ya no se explica como `model + committed + hybrid`.
 Ahora consume series directas y claras:
@@ -21,6 +25,30 @@ Ahora consume series directas y claras:
   - `data/processed/fact_services_canonical.parquet`
 - Auditoria de fuentes:
   - `outputs/pedidos_source_audit.csv`
+
+## Origen de datos de entrada
+
+Por defecto el pipeline prioriza los ficheros en OneDrive:
+
+- `C:\Users\rdiezl\OneDrive - Severiano Servicio Móvil S.A.U\RIVAS - ALMACÉN, TRANSPORTE Y EVENTOS - General\pruebas\Descargas BI\movimientos.xlsx`
+- `C:\Users\rdiezl\OneDrive - Severiano Servicio Móvil S.A.U\RIVAS - ALMACÉN, TRANSPORTE Y EVENTOS - General\pruebas\Descargas BI\Informacion_albaranaes.xlsx`
+- `C:\Users\rdiezl\OneDrive - Severiano Servicio Móvil S.A.U\RIVAS - ALMACÉN, TRANSPORTE Y EVENTOS - General\pruebas\lineas_solicitudes_con_pedidos.xlsx`
+- `C:\Users\rdiezl\OneDrive - Severiano Servicio Móvil S.A.U\RIVAS - ALMACÉN, TRANSPORTE Y EVENTOS - General\pruebas\maestro_dimensiones_limpio.xlsx`
+
+Tambien detecta para trazabilidad y refresco:
+
+- `...\Descargas BI\Movimientos\`
+- `...\Descargas BI\Movimientos pedidos\`
+- `...\Descargas BI\limpieza_movimientos.ipynb`
+- `...\Descargas BI\limpieza_pedidos.ipynb`
+- `...\pruebas\limpieza_general.py`
+
+Fallback si OneDrive no esta disponible:
+
+- `planificacion/Datos/`
+- raiz del repo / `data/raw/`
+
+Los `outputs/` siguen guardandose en el repositorio.
 
 ## Modos de dato del pipeline
 
@@ -97,5 +125,6 @@ Historico consolidado:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python main.py --horizon_days 60 --freq both --use_weather false --data_mode hybrid --operational_cutover_date 2026-03-01
+python main.py --horizon_days 60 --freq both --data_mode hybrid --operational_cutover_date 2026-03-01
+python run_daily_pipeline.py
 ```

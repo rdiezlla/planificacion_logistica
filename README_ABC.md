@@ -6,12 +6,14 @@
 
 - `ABC`: importancia por `pick_lines` (no por unidades).
 - `XYZ`: estabilidad/variabilidad semanal de `pick_lines`.
-
-Este modulo forma parte del motor analitico y escribe resultados en `outputs_abc/`.
+- `abc_pareto_class`: Pareto puro por acumulado.
+- `abc_class`: clase operativa ajustada con suelo minimo de actividad para no inflar `A` con micro-rotacion.
+- El modulo escribe resultados en `outputs_abc/`.
 
 ## Inputs
 
-- `movimientos.xlsx` (raiz del repo)
+- Por defecto se usa `movimientos.xlsx` resuelto automaticamente desde OneDrive `Descargas BI`.
+- El flujo crudo asociado vive en `Descargas BI/Movimientos/` y `Descargas BI/Movimientos pedidos/`.
 
 ## Ejecucion
 
@@ -19,7 +21,7 @@ Este modulo forma parte del motor analitico y escribe resultados en `outputs_abc
 
 ```bash
 source .venv/bin/activate
-python abc_main.py --input movimientos.xlsx --output_dir outputs_abc
+python abc_main.py --output_dir outputs_abc
 ```
 
 ### Windows PowerShell
@@ -27,12 +29,10 @@ python abc_main.py --input movimientos.xlsx --output_dir outputs_abc
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .venv\Scripts\activate
-python abc_main.py --input movimientos.xlsx --output_dir outputs_abc
+python abc_main.py --output_dir outputs_abc
 ```
 
 ## Outputs principales
-
-En `outputs_abc/`:
 
 - `abc_picking_annual.csv`
 - `abc_picking_quarterly.csv`
@@ -44,12 +44,18 @@ En `outputs_abc/`:
 - `abc_for_layout_candidates.csv`
 - `plots/*.png`
 
+## Cobertura del ultimo run
+
+- Lineas PI validas con fecha: 65189
+- SKUs analizados: 7795
+- Owners analizados: 74
+- Rango de fechas: 2022-01-03 00:00:00 -> 2026-03-05 00:00:00
+- Registros descartados por fecha invalida: 0
+- Ultimo periodo global disponible: 2026-YTD
+- Concentracion de pick_lines en clase A (ultimo periodo): 68.4%
+
 ## Conexion con el resto del proyecto
 
-- No recalcula forecast de `main.py`; es un modulo complementario.
-- Streamlit (pagina `ABC Picking`) consume estos CSV para visualizacion.
+- No recalcula el forecast principal de `main.py`.
+- Streamlit (pagina `ABC Picking`) consume `outputs_abc/` para visualizacion.
 - La web React actual no consume `outputs_abc/`.
-
-## Nota operativa
-
-`owner_scope` permite analizar vision global (`GLOBAL`) y por propietario en los mismos outputs.

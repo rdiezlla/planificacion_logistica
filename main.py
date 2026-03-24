@@ -42,7 +42,6 @@ from src.targets import (
     transform_service_forecast_to_workload_expected,
 )
 from src.train import train_and_save_models
-from src.weather_aemet import build_weighted_weather
 
 LOGGER = logging.getLogger("pipeline")
 
@@ -109,7 +108,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pipeline forecasting logistica (servicio + workload)")
     parser.add_argument("--horizon_days", type=int, default=60)
     parser.add_argument("--freq", type=str, default="both", choices=["daily", "weekly", "both"])
-    parser.add_argument("--use_weather", type=str, default="true")
     parser.add_argument("--assignment_window_days", type=int, default=30)
     parser.add_argument("--debug_join", type=str, default="false")
     parser.add_argument("--exclude_years", type=str, default="2025")
@@ -996,7 +994,6 @@ def main() -> None:
 
     cutoff = pd.Timestamp(args.cutoff_date).normalize() if args.cutoff_date else pd.Timestamp.today().normalize()
     operational_cutover = pd.Timestamp(args.operational_cutover_date).normalize()
-    use_weather = parse_bool(args.use_weather)
     debug_join = parse_bool(args.debug_join)
     exclude_years = parse_exclude_years(args.exclude_years)
 
@@ -1087,13 +1084,6 @@ def main() -> None:
     service_weekly_hist = _aggregate_weekly_from_daily(service_daily_hist, SERVICE_TARGETS, axis="service")
     workload_weekly_hist = _aggregate_weekly_from_daily(workload_daily_hist, WORKLOAD_TARGETS, axis="workload")
 
-    weather = build_weighted_weather(
-        service_level=service_level,
-        provincia_station_map=prov_station_map,
-        outputs_dir=outputs_dir,
-        use_weather=use_weather,
-    )
-
     do_daily = args.freq in {"daily", "both"}
     do_weekly = args.freq in {"weekly", "both"}
 
@@ -1109,7 +1099,7 @@ def main() -> None:
             hist_df=service_daily_hist,
             all_df=service_daily,
             holidays_df=holidays_df,
-            weather_daily=weather.weighted_daily,
+            weather_daily=None,
             axis="service",
             freq="daily",
             targets=SERVICE_TARGETS,
@@ -1121,7 +1111,7 @@ def main() -> None:
             hist_df=workload_daily_hist,
             all_df=workload_daily,
             holidays_df=holidays_df,
-            weather_daily=weather.weighted_daily,
+            weather_daily=None,
             axis="workload",
             freq="daily",
             targets=WORKLOAD_TARGETS,
@@ -1166,7 +1156,7 @@ def main() -> None:
             hist_df=service_weekly_hist,
             all_df=service_weekly_initial,
             holidays_df=holidays_df,
-            weather_daily=weather.weighted_daily,
+            weather_daily=None,
             axis="service",
             freq="weekly",
             targets=SERVICE_TARGETS,
@@ -1178,7 +1168,7 @@ def main() -> None:
             hist_df=workload_weekly_hist,
             all_df=workload_weekly_initial,
             holidays_df=holidays_df,
-            weather_daily=weather.weighted_daily,
+            weather_daily=None,
             axis="workload",
             freq="weekly",
             targets=WORKLOAD_TARGETS,

@@ -42,8 +42,8 @@ def build_holiday_calendar(dates: pd.Series, holidays_df: pd.DataFrame) -> pd.Da
         out["dias_hasta_holiday"] = np.nan
         return out
 
-    hol_days = pd.Series(holidays).view("int64").to_numpy()
-    date_days = out["date"].view("int64").to_numpy()
+    hol_days = pd.Series(holidays).astype("int64").to_numpy()
+    date_days = out["date"].astype("int64").to_numpy()
 
     pos = np.searchsorted(hol_days, date_days)
 

@@ -16,10 +16,14 @@ STANDARD_ABC_XYZ_CLASSES = ["AX", "AY", "AZ", "BX", "BY", "BZ", "CX", "CY", "CZ"
 class AbcThresholds:
     a_threshold: float = 0.80
     b_threshold: float = 0.95
+    min_pick_lines_a: int = 5
+    min_pick_lines_b: int = 2
 
     def __post_init__(self) -> None:
         if not (0 < self.a_threshold < self.b_threshold <= 1):
             raise ValueError("Los umbrales ABC deben cumplir 0 < A < B <= 1.")
+        if self.min_pick_lines_a < self.min_pick_lines_b:
+            raise ValueError("min_pick_lines_a debe ser >= min_pick_lines_b.")
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,18 @@ def _classify_abc(share: pd.Series, cumulative: pd.Series, thresholds: AbcThresh
     if len(classes):
         classes[0] = "A"
     return pd.Series(classes, index=share.index, dtype="object")
+
+
+def _apply_activity_floor(
+    abc_pareto_class: pd.Series,
+    pick_lines: pd.Series,
+    thresholds: AbcThresholds,
+) -> pd.Series:
+    out = abc_pareto_class.astype(str).copy()
+    pick_lines_num = pd.to_numeric(pick_lines, errors="coerce").fillna(0).astype(int)
+    out.loc[out.eq("A") & pick_lines_num.lt(thresholds.min_pick_lines_a)] = "B"
+    out.loc[out.eq("B") & pick_lines_num.lt(thresholds.min_pick_lines_b)] = "C"
+    return out
 
 
 def _classify_xyz(mean_value: float, cv_value: float | None, active_weeks: int, thresholds: XyzThresholds) -> str:
@@ -152,6 +168,7 @@ def summarize_period(
         "last_pick_date",
         "share_pct",
         "cumulative_pct",
+        "abc_pareto_class",
         "abc_class",
         "rank_in_period",
         "mean_weekly_pick_lines",
@@ -190,7 +207,8 @@ def summarize_period(
     total_pick_lines = float(grouped["pick_lines"].sum())
     grouped["share_pct"] = grouped["pick_lines"] / total_pick_lines if total_pick_lines > 0 else 0.0
     grouped["cumulative_pct"] = grouped["share_pct"].cumsum()
-    grouped["abc_class"] = _classify_abc(grouped["share_pct"], grouped["cumulative_pct"], abc_thresholds)
+    grouped["abc_pareto_class"] = _classify_abc(grouped["share_pct"], grouped["cumulative_pct"], abc_thresholds)
+    grouped["abc_class"] = _apply_activity_floor(grouped["abc_pareto_class"], grouped["pick_lines"], abc_thresholds)
     grouped["rank_in_period"] = np.arange(1, len(grouped) + 1, dtype=int)
     grouped["abc_xyz_class"] = grouped["abc_class"].astype(str) + grouped["xyz_class"].astype(str)
     grouped["owner_scope"] = owner_scope

@@ -321,7 +321,9 @@ def densify_daily_calendar(
         dense["axis"] = axis
     if "is_historical" not in dense.columns:
         dense["is_historical"] = dense["is_observed_day"]
-    dense["is_historical"] = np.where(dense["is_blackout"].eq(1), 0, dense["is_historical"]).astype(int)
+    historical_flag = pd.to_numeric(dense["is_historical"], errors="coerce")
+    historical_flag = historical_flag.fillna(pd.to_numeric(dense["is_observed_day"], errors="coerce")).fillna(0)
+    dense["is_historical"] = np.where(dense["is_blackout"].eq(1), 0, historical_flag).astype(int)
 
     keep_cols = sorted(set(dense.columns) | set(future.columns))
     out = pd.concat([dense, future], ignore_index=True, sort=False)

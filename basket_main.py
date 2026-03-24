@@ -4,6 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from src.io import resolve_movimientos_input_path
 from src_basket.association_rules import mine_rules
 from src_basket.build_transactions import build_transaction_views
 from src_basket.clustering import build_sku_clusters
@@ -15,7 +16,7 @@ from src_basket.report import estimate_location_savings, generate_plots, write_r
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Market basket analysis para picking")
-    parser.add_argument("--input", default="movimientos.xlsx", help="Ruta al Excel de movimientos")
+    parser.add_argument("--input", default=None, help="Ruta al Excel de movimientos; por defecto se prioriza OneDrive")
     parser.add_argument("--output_dir", default="outputs_basket", help="Carpeta de salida")
     parser.add_argument("--min_support", type=float, default=0.005, help="Soporte minimo")
     parser.add_argument("--min_conf", type=float, default=0.2, help="Confianza minima")
@@ -42,7 +43,7 @@ def main() -> int:
     setup_logging(args.log_level)
     logger = logging.getLogger("basket_main")
 
-    input_path = Path(args.input)
+    input_path = resolve_movimientos_input_path(Path(".").resolve(), args.input)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "plots").mkdir(parents=True, exist_ok=True)

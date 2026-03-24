@@ -18,18 +18,39 @@ class InputPaths:
     holidays: Path
     provincia_station_map: Path
     operational_orders: Path | None
+    master_dimensions: Path | None
+    raw_movimientos_dir: Path | None
+    raw_movimientos_pedidos_dir: Path | None
+    cleanup_movimientos_notebook: Path | None
+    cleanup_pedidos_notebook: Path | None
+    cleanup_general_script: Path | None
+    download_movimientos_script: Path | None
+
+
+ONEDRIVE_BASE_DIR = (
+    Path.home()
+    / "OneDrive - Severiano Servicio Móvil S.A.U"
+    / "RIVAS - ALMACÉN, TRANSPORTE Y EVENTOS - General"
+    / "pruebas"
+)
+ONEDRIVE_DESCARGAS_BI_DIR = ONEDRIVE_BASE_DIR / "Descargas BI"
+ONEDRIVE_PLANIFICACION_DIR = ONEDRIVE_BASE_DIR / "Descargas BI" / "planificacion"
 
 
 INPUT_CANDIDATES: dict[str, list[str]] = {
     "albaranes": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "Informacion_albaranaes.xlsx"),
+        str(ONEDRIVE_PLANIFICACION_DIR / "Datos" / "Informacion_albaranaes.xlsx"),
+        "planificacion/Datos/Informacion_albaranaes.xlsx",
         "data/raw/legacy/Informacion_albaranaes.xlsx",
         "Informacion_albaranaes.xlsx",
-        "planificacion/Datos/Informacion_albaranaes.xlsx",
     ],
     "movimientos": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "movimientos.xlsx"),
+        str(ONEDRIVE_PLANIFICACION_DIR / "Datos" / "movimientos.xlsx"),
+        "planificacion/Datos/movimientos.xlsx",
         "data/raw/movimientos/movimientos.xlsx",
         "movimientos.xlsx",
-        "planificacion/Datos/movimientos.xlsx",
     ],
     "holidays": ["data/holidays_madrid.csv"],
     "provincia_station_map": ["data/provincia_station_map.csv"],
@@ -37,9 +58,40 @@ INPUT_CANDIDATES: dict[str, list[str]] = {
 
 OPTIONAL_INPUT_CANDIDATES: dict[str, list[str]] = {
     "operational_orders": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "lineas_solicitudes_con_pedidos.xlsx"),
+        str(ONEDRIVE_BASE_DIR / "lineas_solicitudes_con_pedidos.xlsx"),
         "data/raw/operational/lineas_solicitudes_con_pedidos.xlsx",
         "lineas_solicitudes_con_pedidos.xlsx",
-    ]
+    ],
+    "master_dimensions": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "maestro_dimensiones_limpio.xlsx"),
+        str(ONEDRIVE_BASE_DIR / "maestro_dimensiones_limpio.xlsx"),
+        "maestro_dimensiones_limpio.xlsx",
+    ],
+    "raw_movimientos_dir": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "Movimientos"),
+        str(ONEDRIVE_PLANIFICACION_DIR / "Datos" / "Movimientos"),
+        "planificacion/Datos/Movimientos",
+    ],
+    "raw_movimientos_pedidos_dir": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "Movimientos pedidos"),
+        str(ONEDRIVE_PLANIFICACION_DIR / "Datos" / "Movimientos pedidos"),
+        "planificacion/Datos/Movimientos pedidos",
+    ],
+    "cleanup_movimientos_notebook": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "limpieza_movimientos.ipynb"),
+        "planificacion/limpieza_movimientos.ipynb",
+    ],
+    "cleanup_pedidos_notebook": [
+        str(ONEDRIVE_DESCARGAS_BI_DIR / "limpieza_pedidos.ipynb"),
+        "planificacion/limpieza_pedidos.ipynb",
+    ],
+    "cleanup_general_script": [
+        str(ONEDRIVE_BASE_DIR / "limpieza_general.py"),
+    ],
+    "download_movimientos_script": [
+        str(ONEDRIVE_BASE_DIR / "movimientos.py"),
+    ],
 }
 
 
@@ -173,11 +225,23 @@ def apply_header_standardization(df: pd.DataFrame, dataset: str) -> pd.DataFrame
 
 
 def _resolve_candidate_path(root: Path, candidates: list[str]) -> Path | None:
-    for rel in candidates:
-        p = root / rel
+    for raw_candidate in candidates:
+        candidate = Path(raw_candidate).expanduser()
+        p = candidate if candidate.is_absolute() else root / candidate
         if p.exists():
-            return p
+            return p.resolve()
     return None
+
+
+def resolve_movimientos_input_path(root: Path, input_override: str | None = None) -> Path:
+    if input_override:
+        override_path = Path(input_override).expanduser()
+        if not override_path.is_absolute():
+            override_path = (root / override_path).resolve()
+        if not override_path.exists():
+            raise FileNotFoundError(f"No existe el fichero de movimientos indicado: {override_path}")
+        return override_path
+    return resolve_input_paths(root).movimientos
 
 
 def resolve_input_paths(root: Path) -> InputPaths:
@@ -197,10 +261,36 @@ def resolve_input_paths(root: Path) -> InputPaths:
     operational = _resolve_candidate_path(
         root, OPTIONAL_INPUT_CANDIDATES["operational_orders"]
     )
+    master_dimensions = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["master_dimensions"]
+    )
+    raw_movimientos_dir = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["raw_movimientos_dir"]
+    )
+    raw_movimientos_pedidos_dir = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["raw_movimientos_pedidos_dir"]
+    )
+    cleanup_movimientos_notebook = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["cleanup_movimientos_notebook"]
+    )
+    cleanup_pedidos_notebook = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["cleanup_pedidos_notebook"]
+    )
+    cleanup_general_script = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["cleanup_general_script"]
+    )
+    download_movimientos_script = _resolve_candidate_path(
+        root, OPTIONAL_INPUT_CANDIDATES["download_movimientos_script"]
+    )
     if operational is None:
         LOGGER.warning(
             "No se detecto fuente operativa de pedidos (lineas_solicitudes_con_pedidos.xlsx). "
             "Se mantiene modo legacy/hibrido con fallback."
+        )
+    if master_dimensions is None:
+        LOGGER.info(
+            "No se detecto maestro_dimensiones_limpio.xlsx. "
+            "La resolucion de rutas queda preparada, pero el pipeline actual no lo consume todavia."
         )
 
     return InputPaths(
@@ -209,6 +299,13 @@ def resolve_input_paths(root: Path) -> InputPaths:
         holidays=paths["holidays"],
         provincia_station_map=paths["provincia_station_map"],
         operational_orders=operational,
+        master_dimensions=master_dimensions,
+        raw_movimientos_dir=raw_movimientos_dir,
+        raw_movimientos_pedidos_dir=raw_movimientos_pedidos_dir,
+        cleanup_movimientos_notebook=cleanup_movimientos_notebook,
+        cleanup_pedidos_notebook=cleanup_pedidos_notebook,
+        cleanup_general_script=cleanup_general_script,
+        download_movimientos_script=download_movimientos_script,
     )
 
 

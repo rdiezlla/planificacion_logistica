@@ -66,6 +66,11 @@ def build_feature_policy_summary() -> pd.DataFrame:
                 "reason": "Leakage: derivado de movimientos reales del propio dia objetivo y no disponible ex ante.",
             },
             {
+                "feature_pattern": "temp_media_weighted* / precip_weighted* / viento_weighted* / weather_*",
+                "status": "excluded_for_training",
+                "reason": "Decision de negocio: el forecast opera siempre sin meteo para evitar dependencia externa y train-serving skew.",
+            },
+            {
                 "feature_pattern": "had_raw_record / was_zero_filled / calendar_status",
                 "status": "excluded_for_training",
                 "reason": "Flags de trazabilidad del calendario, utiles para diagnostico pero no para scoring ex ante.",

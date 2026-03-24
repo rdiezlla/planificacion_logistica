@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,9 +46,15 @@ def build_feature_sets(df: pd.DataFrame, target_cols: list[str]) -> tuple[list[s
             "calendar_status",
         ]
     )
-    leakage_prefixes = ("movtype_",)
+    leakage_prefixes = (
+        "movtype_",
+        "temp_media_weighted",
+        "precip_weighted",
+        "viento_weighted",
+    )
     feature_cols = [c for c in df.columns if c not in ignore]
     feature_cols = [c for c in feature_cols if not any(c.startswith(prefix) for prefix in leakage_prefixes)]
+    feature_cols = [c for c in feature_cols if c not in {"weather_source", "weather_fallback"}]
 
     categorical = []
     numerical = []
@@ -116,6 +123,7 @@ def _make_regressor(quantile: float | None = None, random_state: int = 42):
             "colsample_bytree": 0.9,
             "random_state": random_state,
             "n_jobs": -1,
+            "verbosity": -1,
         }
         if quantile is None:
             return LGBMRegressor(objective="regression", **params), "lightgbm"
@@ -201,13 +209,19 @@ def predict_with_artifact(artifact: dict, df: pd.DataFrame) -> pd.DataFrame:
         artifact["categorical_cols"],
         artifact["numerical_cols"],
     )
-    p50 = artifact["model_p50"].predict(X)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="X does not have valid feature names, but LGBMRegressor was fitted with feature names",
+            category=UserWarning,
+        )
+        p50 = artifact["model_p50"].predict(X)
 
-    if artifact.get("model_p80") is not None:
-        p80 = artifact["model_p80"].predict(X)
-    else:
-        shift = artifact.get("fallback", {}).get("resid_q80", 0.0)
-        p80 = p50 + shift
+        if artifact.get("model_p80") is not None:
+            p80 = artifact["model_p80"].predict(X)
+        else:
+            shift = artifact.get("fallback", {}).get("resid_q80", 0.0)
+            p80 = p50 + shift
 
     pred = pd.DataFrame({"pred_p50": p50, "pred_p80": p80})
     pred["pred_p80"] = np.maximum(pred["pred_p80"], pred["pred_p50"])
